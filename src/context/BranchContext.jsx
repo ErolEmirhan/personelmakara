@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { BRANCH_FIREBASE, getSavedBranchKey, saveBranchKey } from '../config/firebase';
+import { BRANCH_FIREBASE, DEFAULT_BRANCH_KEY, getSavedBranchKey, saveBranchKey } from '../config/firebase';
 import { getBranchTheme } from '../config/branch';
 import { initFirebase } from '../services/firebaseService';
 
@@ -9,7 +9,7 @@ export function BranchProvider({ children }) {
   const savedKey = getSavedBranchKey();
   const [branchKey, setBranchKey] = useState('');
   const [configured, setConfigured] = useState(false);
-  const [connecting, setConnecting] = useState(!!savedKey);
+  const [connecting, setConnecting] = useState(true);
   const [error, setError] = useState('');
   const initStarted = useRef(false);
 
@@ -38,11 +38,9 @@ export function BranchProvider({ children }) {
   useEffect(() => {
     if (initStarted.current) return;
     initStarted.current = true;
-    if (savedKey && BRANCH_FIREBASE[savedKey]) {
-      selectBranch(savedKey);
-    } else {
-      setConnecting(false);
-    }
+    const key =
+      savedKey && BRANCH_FIREBASE[savedKey] ? savedKey : DEFAULT_BRANCH_KEY;
+    selectBranch(key);
   }, [savedKey, selectBranch]);
 
   return (

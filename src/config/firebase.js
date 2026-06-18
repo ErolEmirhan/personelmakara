@@ -74,6 +74,9 @@ export const SULTAN_SECTIONS = [
 
 const BRANCH_KEY = 'makaraBranchKey';
 
+/** İlk açılışta otomatik seçilen şube */
+export const DEFAULT_BRANCH_KEY = 'makara';
+
 export function getSavedBranchKey() {
   return localStorage.getItem(BRANCH_KEY) || '';
 }
