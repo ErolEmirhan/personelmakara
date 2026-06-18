@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Vercel'de kök dizinden sunulur; kasa PC entegrasyonunda /mobile/ alt yolu kullanılır.
+const base = process.env.VERCEL ? '/' : '/mobile/';
+
 export default defineConfig({
   plugins: [
     react(),
@@ -16,17 +19,17 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/mobile/',
-        scope: '/mobile/',
+        start_url: base,
+        scope: base,
         icons: [
           {
-            src: '/mobile/icons/icon-192.png',
+            src: `${base}icons/icon-192.png`,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable',
           },
           {
-            src: '/mobile/icons/icon-512.png',
+            src: `${base}icons/icon-512.png`,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
@@ -34,7 +37,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        navigateFallback: '/mobile/index.html',
+        navigateFallback: `${base}index.html`,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
@@ -49,7 +52,7 @@ export default defineConfig({
       },
     }),
   ],
-  base: '/mobile/',
+  base,
   server: {
     port: 5174,
     proxy: {
