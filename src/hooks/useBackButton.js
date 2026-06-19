@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { MAIN_TABS } from '../constants/nav';
 
 /** Açık panel/modal varken geri tuşunda çalışır */
 export function useBackHandler(active, onBack) {
@@ -18,11 +19,13 @@ export function useBackHandler(active, onBack) {
 }
 
 /** Android geri tuşunu uygulama içi gezinmeye yönlendirir */
-export function useAndroidBackNavigation() {
+export function useAndroidBackNavigation({ accountOpen, setAccountOpen } = {}) {
   const {
     drawerOpen,
     setDrawerOpen,
     screen,
+    mainTab,
+    setMainTab,
     goBackToTables,
     runBackHandlers,
   } = useApp();
@@ -41,6 +44,11 @@ export function useAndroidBackNavigation() {
         trapHistory();
         return;
       }
+      if (accountOpen && setAccountOpen) {
+        setAccountOpen(false);
+        trapHistory();
+        return;
+      }
       if (drawerOpen) {
         setDrawerOpen(false);
         trapHistory();
@@ -51,11 +59,26 @@ export function useAndroidBackNavigation() {
         trapHistory();
         return;
       }
+      if (mainTab !== MAIN_TABS.TABLES) {
+        setMainTab(MAIN_TABS.TABLES);
+        trapHistory();
+        return;
+      }
       trapHistory();
     };
 
     trapHistory();
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [drawerOpen, setDrawerOpen, screen, goBackToTables, runBackHandlers]);
+  }, [
+    accountOpen,
+    setAccountOpen,
+    drawerOpen,
+    setDrawerOpen,
+    screen,
+    mainTab,
+    setMainTab,
+    goBackToTables,
+    runBackHandlers,
+  ]);
 }

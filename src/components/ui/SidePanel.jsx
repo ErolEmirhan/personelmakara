@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { SLIDE_PANEL_MS, useSlidePanelTransition } from '../../hooks/useSlidePanelTransition';
 
 export function SidePanel({
   open,
@@ -9,9 +10,15 @@ export function SidePanel({
   header,
   widthClass = 'w-[min(380px,92vw)]',
   zIndexClass = 'z-[9000]',
+  direction = 'right',
+  panelClassName = '',
+  contentClassName = '',
+  ariaLabel,
 }) {
+  const { present, shown, panelRef, duration } = useSlidePanelTransition(open, SLIDE_PANEL_MS);
+
   useEffect(() => {
-    if (!open) return undefined;
+    if (!present) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e) => {
@@ -22,24 +29,45 @@ export function SidePanel({
       document.body.style.overflow = prev;
       window.removeEventListener('keydown', onKey);
     };
-  }, [open, onClose]);
+  }, [present, onClose]);
 
-  if (!open) return null;
+  if (!present) return null;
+
+  const isLeft = direction === 'left';
+  const hiddenTransform = isLeft ? '-translate-x-full' : 'translate-x-full';
+  const panelPosition = isLeft ? 'left-0' : 'right-0';
+  const panelShadow = isLeft
+    ? 'shadow-[16px_0_48px_rgba(15,23,42,0.18)] border-r border-white/20'
+    : 'shadow-[-16px_0_48px_rgba(15,23,42,0.18)] border-l border-white/20';
+  const defaultPanelBg = isLeft ? 'bg-slate-50' : 'bg-white';
 
   return (
-    <div className={`fixed inset-0 ${zIndexClass}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div
+      className={`fixed inset-0 ${zIndexClass}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel || title}
+    >
       <button
         type="button"
-        className="absolute inset-0 bg-slate-950/45 backdrop-blur-[6px] animate-fade-in cursor-default"
+        className={`absolute inset-0 bg-slate-950/45 backdrop-blur-[6px] cursor-default transition-opacity ease-out ${
+          shown ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ transitionDuration: `${duration}ms` }}
         onClick={onClose}
         aria-label="Kapat"
       />
 
       <aside
-        className={`absolute top-0 right-0 bottom-0 ${widthClass} flex flex-col bg-white shadow-[-16px_0_48px_rgba(15,23,42,0.18)] animate-slide-in-right safe-top safe-bottom border-l border-white/20`}
+        ref={panelRef}
+        className={`absolute top-0 bottom-0 ${panelPosition} ${widthClass} flex flex-col ${defaultPanelBg} ${panelShadow} safe-bottom transition-transform ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform ${panelClassName} ${
+          shown ? 'translate-x-0' : hiddenTransform
+        }`}
+        style={{ transitionDuration: `${duration}ms` }}
         onClick={(e) => e.stopPropagation()}
       >
-        {header || (
+        {header}
+        {header === undefined && (title || subtitle) && (
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-gray-100/80">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -66,7 +94,9 @@ export function SidePanel({
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">{children}</div>
+        <div className={`flex-1 min-h-0 overflow-hidden flex flex-col ${contentClassName}`}>
+          {children}
+        </div>
       </aside>
     </div>
   );

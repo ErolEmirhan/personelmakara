@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
+import { BOTTOM_NAV_PADDING } from '../../constants/nav';
 import { MAKARA_HAVZAN_ZONES } from '../../config/firebase';
 
 const ZONE_FRAME = {
@@ -210,7 +211,7 @@ export function TableScreen() {
   );
 
   return (
-    <div className="px-4 pb-32">
+    <div className="px-4" style={{ paddingBottom: BOTTOM_NAV_PADDING }}>
       {isSultanLayout && (
         <SultanSectionBar
           tables={tables}

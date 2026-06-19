@@ -151,9 +151,12 @@ export function mergeFirestoreTables(baseTables, firestoreMap) {
     const occupied = remote.is_occupied === true && Array.isArray(remote.items) && remote.items.length > 0;
     return {
       ...t,
+      is_occupied: remote.is_occupied === true,
       hasOrder: occupied,
       orderTotal: occupied ? (Number(remote.total_amount) || 0) : null,
       name: remote.table_name || t.name,
+      items: occupied ? remote.items : [],
+      order_id: remote.order_id ?? null,
     };
   });
 }

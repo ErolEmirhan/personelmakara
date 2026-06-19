@@ -70,6 +70,7 @@ export const SULTAN_TABLE_SECTIONS = [
 
 export function hasManagerPermission(staff, branchKey) {
   if (!staff) return false;
+  if (staff.is_admin) return true;
   if (branchKey === 'sultansomati') return true;
   return !!staff.is_manager;
 }

@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBranch } from '../../context/BranchContext';
 import { fetchBranchStaff } from '../../services/firebaseService';
+import {
+  adminSectionCardClass,
+  adminSectionHeaderClass,
+} from '../../constants/adminTheme';
+import {
+  bossSectionCardClass,
+  bossSectionHeaderClass,
+} from '../../constants/bossTheme';
 import { StaffAvatar } from '../ui/StaffAvatar';
+import { staffRolePriority } from '../../utils/staffRole';
 import { useBackHandler } from '../../hooks/useBackButton';
 
 function buildStaffLookup(staffList) {
@@ -52,6 +61,8 @@ export function groupOrderItemsByStaff(items, staffList) {
         profileImageSrc: staff?.profileImageSrc || null,
         is_manager: !!staff?.is_manager,
         is_chef: !!staff?.is_chef,
+        is_admin: !!staff?.is_admin,
+        is_boss: !!staff?.is_boss,
         items: [],
       });
     }
@@ -73,10 +84,14 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
       .catch(() => setStaffList([]));
   }, [branchKey, items.length]);
 
-  const groups = useMemo(
-    () => groupOrderItemsByStaff(items, staffList),
-    [items, staffList]
-  );
+  const groups = useMemo(() => {
+    const list = groupOrderItemsByStaff(items, staffList);
+    return list.sort((a, b) => {
+      const roleDiff = staffRolePriority(a) - staffRolePriority(b);
+      if (roleDiff !== 0) return roleDiff;
+      return (a.displayName || '').localeCompare(b.displayName || '', 'tr');
+    });
+  }, [items, staffList]);
 
   useBackHandler(items.length > 0 && expanded, () => setExpanded(false));
 
@@ -124,6 +139,8 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
                   profileImageSrc={group.profileImageSrc}
                   isManager={group.is_manager}
                   isChef={group.is_chef}
+                  isAdmin={group.is_admin}
+                  isBoss={group.is_boss}
                   size="2xs"
                   accent={theme.accent}
                 />
@@ -160,26 +177,48 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
               0
             );
 
+            const isBossGroup = group.is_boss && !group.is_admin;
+
             return (
               <section
                 key={group.key}
-                className="rounded-xl bg-white/70 border border-emerald-100/80 overflow-hidden"
+                className={
+                  group.is_admin
+                    ? adminSectionCardClass
+                    : isBossGroup
+                      ? bossSectionCardClass
+                      : 'rounded-xl overflow-hidden bg-white/70 border border-emerald-100/80'
+                }
               >
-                <div className="flex items-center gap-3 px-3 py-2.5 bg-white/90 border-b border-emerald-100/60">
+                <div className={`flex items-center gap-3 px-3 py-2.5 border-b ${
+                  group.is_admin
+                    ? adminSectionHeaderClass
+                    : isBossGroup
+                      ? bossSectionHeaderClass
+                      : 'bg-white/90 border-emerald-100/60'
+                }`}>
                   <StaffAvatar
                     name={group.name}
                     surname={group.surname}
                     profileImageSrc={group.profileImageSrc}
                     isManager={group.is_manager}
                     isChef={group.is_chef}
+                    isAdmin={group.is_admin}
+                    isBoss={group.is_boss}
                     size="sm"
                     accent={theme.accent}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm truncate">
+                    <p className="font-semibold text-sm truncate text-slate-900">
                       {group.displayName}
                     </p>
-                    <p className="text-[11px] text-gray-500">
+                    <p className={`text-[11px] ${
+                      group.is_admin
+                        ? 'text-amber-800/55 font-medium'
+                        : isBossGroup
+                          ? 'text-red-800/55 font-medium'
+                          : 'text-gray-500'
+                    }`}>
                       {group.items.length} ürün · {groupTotal.toFixed(2)} ₺
                     </p>
                   </div>

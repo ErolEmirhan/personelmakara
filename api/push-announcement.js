@@ -1,0 +1,158 @@
+import { getAdminForBranch, canSendAnnouncements } from './_lib/firebaseAdmin.js';
+
+const STAFF_PUSH_TOKENS = 'staff_push_tokens';
+const STAFF_COLLECTION = 'staff';
+const MAX_TOKENS_PER_BATCH = 500;
+
+function json(res, status, body) {
+  res.status(status).setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(body));
+}
+
+async function collectBranchTokens(db, branchKey, excludeStaffId) {
+  const snap = await db.collection(STAFF_PUSH_TOKENS).where('branchKey', '==', branchKey).get();
+  const tokens = new Set();
+
+  snap.forEach((docSnap) => {
+    if (excludeStaffId && docSnap.id === String(excludeStaffId)) return;
+    const data = docSnap.data() || {};
+    for (const token of data.tokens || []) {
+      if (typeof token === 'string' && token.length > 20) tokens.add(token);
+    }
+  });
+
+  return [...tokens];
+}
+
+async function removeInvalidTokens(db, tokensToRemove) {
+  if (!tokensToRemove.length) return;
+
+  const snap = await db.collection(STAFF_PUSH_TOKENS).get();
+  const batch = db.batch();
+  let writes = 0;
+
+  snap.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    const current = data.tokens || [];
+    const next = current.filter((t) => !tokensToRemove.includes(t));
+    if (next.length !== current.length) {
+      batch.set(docSnap.ref, { ...data, tokens: next, updatedAt: new Date() }, { merge: true });
+      writes += 1;
+    }
+  });
+
+  if (writes > 0) await batch.commit();
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return json(res, 405, { error: 'Method not allowed' });
+  }
+
+  let body = req.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return json(res, 400, { error: 'Geçersiz JSON' });
+    }
+  }
+
+  const branchKey = body?.branchKey;
+  const staffId = body?.staffId;
+  const title = (body?.title || '').trim();
+  const message = (body?.message || '').trim();
+  const announcementId = body?.announcementId || null;
+
+  if (!branchKey || staffId == null || !message) {
+    return json(res, 400, { error: 'branchKey, staffId ve message gerekli' });
+  }
+
+  const optionalSecret = process.env.PUSH_API_SECRET;
+  if (optionalSecret && body?.secret !== optionalSecret) {
+    return json(res, 401, { error: 'Yetkisiz istek' });
+  }
+
+  try {
+    const { db, messaging } = getAdminForBranch(branchKey);
+
+    const staffSnap = await db.collection(STAFF_COLLECTION).doc(String(staffId)).get();
+    if (!staffSnap.exists) {
+      return json(res, 403, { error: 'Personel bulunamadı' });
+    }
+
+    const staff = staffSnap.data();
+    if (staff.branchKey && staff.branchKey !== branchKey) {
+      return json(res, 403, { error: 'Şube uyuşmuyor' });
+    }
+    if (!canSendAnnouncements(staff)) {
+      return json(res, 403, { error: 'Bildirim gönderme yetkisi yok' });
+    }
+
+    const tokens = await collectBranchTokens(db, branchKey, null);
+    if (tokens.length === 0) {
+      return json(res, 200, { success: true, sent: 0, message: 'Kayıtlı cihaz yok' });
+    }
+
+    const notificationTitle = title || 'MAKARA · Ekip bildirimi';
+    const notificationBody = message.length > 180 ? `${message.slice(0, 177)}…` : message;
+
+    let sent = 0;
+    let failed = 0;
+    const invalidTokens = [];
+
+    for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
+      const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
+      const response = await messaging.sendEachForMulticast({
+        tokens: chunk,
+        notification: {
+          title: notificationTitle,
+          body: notificationBody,
+        },
+        data: {
+          type: 'staff_announcement',
+          branchKey,
+          announcementId: announcementId || '',
+          title: notificationTitle,
+          body: notificationBody,
+        },
+        webpush: {
+          fcmOptions: {
+            link: '/?tab=notifications',
+          },
+          notification: {
+            icon: '/icons/icon-192.png',
+            badge: '/icons/icon-192.png',
+          },
+        },
+      });
+
+      sent += response.successCount;
+      failed += response.failureCount;
+
+      response.responses.forEach((item, index) => {
+        if (item.success) return;
+        const code = item.error?.code;
+        if (
+          code === 'messaging/invalid-registration-token' ||
+          code === 'messaging/registration-token-not-registered'
+        ) {
+          invalidTokens.push(chunk[index]);
+        }
+      });
+    }
+
+    await removeInvalidTokens(db, invalidTokens);
+
+    return json(res, 200, {
+      success: true,
+      sent,
+      failed,
+      totalTokens: tokens.length,
+      invalidRemoved: invalidTokens.length,
+    });
+  } catch (err) {
+    console.error('push-announcement error:', err);
+    return json(res, 500, { error: err.message || 'Push gönderilemedi' });
+  }
+}

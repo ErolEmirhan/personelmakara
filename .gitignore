@@ -4,3 +4,6 @@ dist/
 *.log
 .env
 .env.*
+!.env.example
+*firebase-adminsdk*.json
+_asar_tmp/

@@ -11,9 +11,12 @@ import {
   doc,
   updateDoc,
   setDoc,
+  deleteDoc,
   orderBy,
   limit,
   serverTimestamp,
+  increment,
+  writeBatch,
 } from 'firebase/firestore';
 import {
   BRANCH_FIREBASE,
@@ -21,6 +24,7 @@ import {
   mergeFirestoreTables,
 } from '../config/firebase';
 import { getBranchTheme, YAN_URUNLER_CATEGORY_ID } from '../config/branch';
+import { canSendStaffAnnouncements } from '../utils/staffRole';
 import { normalizeProductImage } from './productImageCache';
 
 let mainApp = null;
@@ -148,6 +152,8 @@ function mapStaffRecord(data, fallbackId) {
     surname: data?.surname || '',
     is_manager: parseStaffFlag(data?.is_manager) || parseStaffFlag(data?.isManager),
     is_chef: parseStaffFlag(data?.is_chef) || parseStaffFlag(data?.isChef),
+    is_admin: parseStaffFlag(data?.is_admin) || parseStaffFlag(data?.isAdmin),
+    is_boss: parseStaffFlag(data?.is_boss) || parseStaffFlag(data?.isBoss),
     profileImageSrc: staffProfileSrc(data),
   };
 }
@@ -188,6 +194,116 @@ export async function changeStaffPassword(staffId, currentPassword, newPassword)
   }
   const ref = doc(requireMainDb(), 'staff', String(staffId));
   await updateDoc(ref, { password: newPassword.toString(), updatedAt: new Date().toISOString() });
+  return { success: true };
+}
+
+export async function updateStaffMemberRoles(branchKey, staffId, roles) {
+  const db = requireMainDb();
+  const id = String(staffId);
+  const timestamp = new Date().toISOString();
+  const all = await fetchBranchStaff(branchKey);
+
+  let isAdmin = !!roles.is_admin;
+  let isBoss = !!roles.is_boss;
+  let isManager = !!roles.is_manager;
+  let isChef = branchKey === 'makara' ? !!roles.is_chef : false;
+
+  if (isManager) isChef = false;
+  if (isChef) isManager = false;
+
+  const writes = [];
+
+  if (isManager) {
+    for (const s of all) {
+      if (String(s.id) !== id && s.is_manager) {
+        writes.push(
+          updateDoc(doc(db, 'staff', String(s.id)), {
+            is_manager: false,
+            updatedAt: timestamp,
+          })
+        );
+      }
+    }
+  }
+
+  writes.push(
+    updateDoc(doc(db, 'staff', id), {
+      is_admin: isAdmin,
+      is_boss: isBoss,
+      is_manager: isManager,
+      is_chef: isChef,
+      updatedAt: timestamp,
+    })
+  );
+
+  await Promise.all(writes);
+
+  try {
+    const presenceRef = doc(db, 'staff_presence', id);
+    const presenceSnap = await getDoc(presenceRef);
+    if (presenceSnap.exists()) {
+      await updateDoc(presenceRef, {
+        is_admin: isAdmin,
+        is_boss: isBoss,
+        is_manager: isManager,
+        is_chef: isChef,
+      });
+    }
+  } catch {
+    /* presence yoksa sorun değil */
+  }
+
+  return { success: true };
+}
+
+export async function deleteStaffMember(staffId) {
+  const db = requireMainDb();
+  const id = String(staffId);
+  await deleteDoc(doc(db, 'staff', id));
+  try {
+    await deleteDoc(doc(db, 'staff_presence', id));
+  } catch {
+    /* presence yoksa sorun değil */
+  }
+  return { success: true };
+}
+
+export async function updateStaffMemberProfile(staffId, { name, surname, password }) {
+  const db = requireMainDb();
+  const id = String(staffId);
+  const trimmedName = (name ?? '').trim();
+  const trimmedSurname = (surname ?? '').trim();
+
+  if (!trimmedName || !trimmedSurname) {
+    throw new Error('Ad ve soyad gerekli');
+  }
+
+  const patch = {
+    name: trimmedName,
+    surname: trimmedSurname,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const nextPassword = (password ?? '').toString().trim();
+  if (nextPassword) {
+    patch.password = nextPassword;
+  }
+
+  await updateDoc(doc(db, 'staff', id), patch);
+
+  try {
+    const presenceRef = doc(db, 'staff_presence', id);
+    const presenceSnap = await getDoc(presenceRef);
+    if (presenceSnap.exists()) {
+      await updateDoc(presenceRef, {
+        name: trimmedName,
+        surname: trimmedSurname,
+      });
+    }
+  } catch {
+    /* presence yoksa sorun değil */
+  }
+
   return { success: true };
 }
 
@@ -505,6 +621,8 @@ export async function touchStaffPresence(staff, branchKey, isOnline = true) {
       surname: staff.surname || '',
       is_manager: !!staff.is_manager,
       is_chef: !!staff.is_chef,
+      is_admin: !!staff.is_admin,
+      is_boss: !!staff.is_boss,
       branchKey,
       isOnline,
       viewingTableId: viewing?.tableId ?? null,
@@ -608,6 +726,225 @@ export function subscribeStaffPresence(branchKey, onUpdate) {
     },
     () => onUpdate(new Map())
   );
+}
+
+// ── Ekip bildirimleri (yönetici → personel + yorumlar) ───────────────────────
+
+const STAFF_ANNOUNCEMENTS = 'staff_announcements';
+
+function timestampToMs(value) {
+  if (!value) return null;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapStaffAnnouncement(docSnap) {
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    branchKey: data.branchKey,
+    title: data.title || '',
+    message: data.message || '',
+    authorStaffId: data.authorStaffId,
+    authorName: data.authorName || '',
+    authorSurname: data.authorSurname || '',
+    authorProfileImageSrc: data.authorProfileImageSrc || null,
+    authorIsManager: !!data.authorIsManager,
+    authorIsAdmin: !!data.authorIsAdmin,
+    authorIsBoss: !!data.authorIsBoss,
+    authorIsChef: !!data.authorIsChef,
+    commentCount: data.commentCount || 0,
+    createdAtMs: timestampToMs(data.createdAt),
+  };
+}
+
+function mapAnnouncementComment(docSnap) {
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    announcementId: data.announcementId,
+    parentCommentId: data.parentCommentId || null,
+    replyToStaffName: data.replyToStaffName || '',
+    replyToStaffSurname: data.replyToStaffSurname || '',
+    staffId: data.staffId,
+    staffName: data.staffName || '',
+    staffSurname: data.staffSurname || '',
+    profileImageSrc: data.profileImageSrc || null,
+    isManager: !!data.isManager,
+    isAdmin: !!data.isAdmin,
+    isBoss: !!data.isBoss,
+    isChef: !!data.isChef,
+    isReply: !!data.parentCommentId,
+    text: data.text || '',
+    createdAtMs: timestampToMs(data.createdAt),
+  };
+}
+
+export async function createStaffAnnouncement(branchKey, staff, { title, message }) {
+  if (!branchKey || !staff?.id) throw new Error('Oturum gerekli');
+  const trimmedMessage = (message || '').trim();
+  if (!trimmedMessage) throw new Error('Mesaj gerekli');
+  if (trimmedMessage.length > 1000) throw new Error('Mesaj en fazla 1000 karakter olabilir');
+
+  const trimmedTitle = (title || '').trim();
+  if (trimmedTitle.length > 120) throw new Error('Başlık en fazla 120 karakter olabilir');
+
+  const db = requireMainDb();
+  const docRef = await addDoc(collection(db, STAFF_ANNOUNCEMENTS), {
+    branchKey,
+    title: trimmedTitle || null,
+    message: trimmedMessage,
+    authorStaffId: staff.id,
+    authorName: staff.name || '',
+    authorSurname: staff.surname || '',
+    authorProfileImageSrc: staff.profileImageSrc || null,
+    authorIsManager: !!staff.is_manager,
+    authorIsAdmin: !!staff.is_admin,
+    authorIsBoss: !!staff.is_boss,
+    authorIsChef: !!staff.is_chef,
+    commentCount: 0,
+    createdAt: serverTimestamp(),
+  });
+  return { success: true, id: docRef.id };
+}
+
+export function subscribeStaffAnnouncements(branchKey, onUpdate) {
+  if (!isFirebaseReady() || !branchKey) return () => {};
+  const db = requireMainDb();
+  const q = query(
+    collection(db, STAFF_ANNOUNCEMENTS),
+    where('branchKey', '==', branchKey)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map(mapStaffAnnouncement);
+      list.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+      onUpdate(list.slice(0, 50));
+    },
+    (err) => {
+      console.error('staff_announcements snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export function subscribeAnnouncementComments(announcementId, onUpdate) {
+  if (!isFirebaseReady() || !announcementId) return () => {};
+  const db = requireMainDb();
+  const q = query(
+    collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'comments')
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map(mapAnnouncementComment);
+      list.sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
+      onUpdate(list.slice(0, 200));
+    },
+    (err) => {
+      console.error('announcement comments snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export async function addAnnouncementComment(announcementId, staff, text, options = {}) {
+  if (!announcementId || !staff?.id) throw new Error('Oturum gerekli');
+  const trimmed = (text || '').trim();
+  if (!trimmed) throw new Error('Yorum gerekli');
+  if (trimmed.length > 500) throw new Error('Yorum en fazla 500 karakter olabilir');
+
+  const { parentCommentId, replyToStaffName, replyToStaffSurname } = options;
+
+  if (parentCommentId && !canSendStaffAnnouncements(staff)) {
+    throw new Error('Yanıt verme yetkiniz yok');
+  }
+
+  const db = requireMainDb();
+  const announcementRef = doc(db, STAFF_ANNOUNCEMENTS, announcementId);
+
+  await addDoc(collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'comments'), {
+    announcementId,
+    parentCommentId: parentCommentId || null,
+    replyToStaffName: replyToStaffName || null,
+    replyToStaffSurname: replyToStaffSurname || null,
+    staffId: staff.id,
+    staffName: staff.name || '',
+    staffSurname: staff.surname || '',
+    profileImageSrc: staff.profileImageSrc || null,
+    isManager: !!staff.is_manager,
+    isAdmin: !!staff.is_admin,
+    isBoss: !!staff.is_boss,
+    isChef: !!staff.is_chef,
+    text: trimmed,
+    createdAt: serverTimestamp(),
+  });
+
+  await updateDoc(announcementRef, { commentCount: increment(1) });
+
+  return { success: true };
+}
+
+export async function deleteStaffAnnouncement(announcementId, staff) {
+  if (!announcementId || !staff?.id) throw new Error('Oturum gerekli');
+
+  const db = requireMainDb();
+  const announcementRef = doc(db, STAFF_ANNOUNCEMENTS, announcementId);
+  const snap = await getDoc(announcementRef);
+
+  if (!snap.exists()) throw new Error('Bildirim bulunamadı');
+
+  const data = snap.data();
+  if (String(data.authorStaffId) !== String(staff.id)) {
+    throw new Error('Bu bildirimi silme yetkiniz yok');
+  }
+
+  const commentsSnap = await getDocs(
+    collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'comments')
+  );
+
+  const refs = [...commentsSnap.docs.map((d) => d.ref), announcementRef];
+  for (let i = 0; i < refs.length; i += 500) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + 500).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  return { success: true };
+}
+
+// ── Push bildirim token'ları ─────────────────────────────────────────────────
+
+const STAFF_PUSH_TOKENS = 'staff_push_tokens';
+const MAX_PUSH_TOKENS_PER_STAFF = 5;
+
+export async function saveStaffPushToken(staffId, branchKey, token) {
+  if (!staffId || !branchKey || !token) return { success: false };
+  const db = requireMainDb();
+  const ref = doc(db, STAFF_PUSH_TOKENS, String(staffId));
+  const snap = await getDoc(ref);
+
+  if (snap.exists()) {
+    const existing = snap.data().tokens || [];
+    const merged = [...new Set([...existing, token])].slice(-MAX_PUSH_TOKENS_PER_STAFF);
+    await updateDoc(ref, {
+      branchKey,
+      tokens: merged,
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(ref, {
+      staffId,
+      branchKey,
+      tokens: [token],
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  return { success: true };
 }
 
 export { YAN_URUNLER_CATEGORY_ID, getBranchTheme };

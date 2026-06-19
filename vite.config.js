@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png'],
+      includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png', 'makara.png'],
       manifest: {
         name: 'MAKARA Mobil Sipariş',
         short_name: 'MAKARA Personel',

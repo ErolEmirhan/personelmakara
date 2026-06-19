@@ -18,11 +18,12 @@ html {
   -ms-touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  background-color: #f9fafb;
 }
 
 body {
   font-family: 'DM Sans', system-ui, sans-serif;
-  background: #0f0f14;
+  background: #f9fafb;
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;

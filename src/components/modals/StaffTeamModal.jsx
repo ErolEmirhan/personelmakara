@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SidePanel } from '../ui/SidePanel';
 import { StaffAvatar } from '../ui/StaffAvatar';
-import { LogoutModal } from './LogoutModal';
+import { LuxuryFluidBackdrop, getLuxuryCardShell } from '../ui/LuxuryFluidBackdrop';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
@@ -13,139 +13,51 @@ import {
 } from '../../services/firebaseService';
 import { fileToDataUrl } from '../../services/staffProfileImage';
 import { ProfileImageCropModal } from './ProfileImageCropModal';
+import { StaffAssignModal } from './StaffAssignModal';
+import { StaffDeleteModal } from './StaffDeleteModal';
+import { staffRoleLabel, staffRolePriority, canManageStaff } from '../../utils/staffRole';
+import {
+  adminBadgeClass,
+} from '../../constants/adminTheme';
+import {
+  bossBadgeClass,
+} from '../../constants/bossTheme';
+import {
+  managerBadgeClass,
+} from '../../constants/managerTheme';
+import { formatLastSeenLabel } from '../../utils/formatLastSeen';
 
-function staffRoleLabel(s) {
-  if (s.is_manager) return 'Müdür';
-  if (s.is_chef) return 'Şef';
-  return 'Personel';
-}
-
-function PanelHeader({
-  onClose,
-  theme,
-  onlineCount,
-  totalCount,
-  currentStaff,
-  uploadingProfile,
-  onPickPhoto,
-  onRemovePhoto,
-}) {
-  const fileRef = useRef(null);
-  const hasPhoto = !!currentStaff?.profileImageSrc;
-
-  return (
-    <div className={`relative shrink-0 overflow-hidden bg-gradient-to-br ${theme.accent}`}>
-      <div className="absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_20%,white_0%,transparent_50%)]" />
-      <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
-      <div className="absolute -left-6 bottom-0 w-32 h-32 rounded-full bg-black/10 blur-2xl" />
-
-      <div className="relative px-5 pt-5 pb-6">
-        <div className="flex items-start justify-between gap-3 mb-5">
-          <div>
-            <p className="text-white/70 text-[11px] font-semibold uppercase tracking-[0.2em]">
-              Ekip
-            </p>
-            <h2 className="text-white text-2xl font-display font-bold tracking-tight mt-0.5">
-              Personel
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 w-10 h-10 rounded-xl bg-white/15 backdrop-blur border border-white/25 text-white flex items-center justify-center hover:bg-white/25 active:scale-95 transition-all"
-            aria-label="Kapat"
+function OnlinePill({ online, compact, light, lastSeenLabel }) {
+  if (compact) {
+    return (
+      <div className="flex flex-col items-end gap-0.5 max-w-[7.5rem]">
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+            light
+              ? online
+                ? 'bg-white/15 text-white border border-white/20'
+                : 'bg-white/10 text-white/50 border border-white/15'
+              : online
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                : 'bg-gray-100 text-gray-500 border border-gray-200/80'
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+          {online ? 'Aktif' : 'Kapalı'}
+        </span>
+        {!online && lastSeenLabel && (
+          <span
+            className={`text-[9px] font-medium leading-snug text-right ${
+              light ? 'text-white/45' : 'text-gray-400'
+            }`}
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {currentStaff && (
-          <div className="flex items-center gap-3.5 mb-5 p-3.5 rounded-2xl bg-white/12 backdrop-blur border border-white/20">
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploadingProfile}
-                className="relative block overflow-visible active:scale-95 transition-transform disabled:opacity-70"
-                aria-label="Profil fotoğrafı değiştir"
-              >
-                <StaffAvatar
-                  name={currentStaff.name}
-                  surname={currentStaff.surname}
-                  profileImageSrc={currentStaff.profileImageSrc}
-                  isManager={currentStaff.is_manager}
-                  isChef={currentStaff.is_chef}
-                  size="lg"
-                  accent={theme.accent}
-                />
-                <span className="absolute inset-0 rounded-full overflow-hidden bg-black/25 flex items-center justify-center opacity-0 hover:opacity-100 active:opacity-100 transition-opacity">
-                  {uploadingProfile ? (
-                    <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
-                    </svg>
-                  )}
-                </span>
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onPickPhoto}
-              />
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <p className="text-white font-semibold truncate">
-                {currentStaff.name} {currentStaff.surname}
-              </p>
-              <p className="text-white/65 text-xs mt-0.5">{staffRoleLabel(currentStaff)} · Sen</p>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploadingProfile}
-                className="mt-2 text-[11px] font-semibold text-white/90 underline-offset-2 hover:underline disabled:opacity-60"
-              >
-                {hasPhoto ? 'Fotoğrafı değiştir' : 'Fotoğraf ekle'}
-              </button>
-              {hasPhoto && (
-                <button
-                  type="button"
-                  onClick={onRemovePhoto}
-                  disabled={uploadingProfile}
-                  className="block mt-1 text-[11px] font-medium text-white/55 hover:text-white/80 disabled:opacity-60"
-                >
-                  Fotoğrafı kaldır
-                </button>
-              )}
-            </div>
-          </div>
+            {lastSeenLabel}
+          </span>
         )}
-
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className="rounded-2xl bg-white/12 backdrop-blur border border-white/20 px-3.5 py-3">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-60" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-300" />
-              </span>
-              <span className="text-white/75 text-xs font-medium">Çevrimiçi</span>
-            </div>
-            <p className="text-white text-2xl font-display font-bold mt-1">{onlineCount}</p>
-          </div>
-          <div className="rounded-2xl bg-white/12 backdrop-blur border border-white/20 px-3.5 py-3">
-            <p className="text-white/75 text-xs font-medium">Toplam</p>
-            <p className="text-white text-2xl font-display font-bold mt-1">{totalCount}</p>
-          </div>
-        </div>
       </div>
-    </div>
-  );
+    );
+  }
+  return null;
 }
 
 export function StaffTeamModal({ open, onClose, branchKey }) {
@@ -156,8 +68,23 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
   const [presenceMap, setPresenceMap] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [uploadingProfile, setUploadingProfile] = useState(false);
-  const [showLogout, setShowLogout] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState(null);
+  const [assignTarget, setAssignTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  const fileRef = useRef(null);
+
+  const isCurrentAdmin = canManageStaff(currentStaff);
+
+  const reloadStaff = async () => {
+    if (!branchKey) return;
+    try {
+      const list = await fetchBranchStaff(branchKey);
+      setStaffList(list);
+    } catch {
+      setStaffList([]);
+    }
+  };
 
   useEffect(() => {
     if (!open || !branchKey) return undefined;
@@ -171,22 +98,41 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
     return unsub;
   }, [open, branchKey]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [open]);
+
   const rows = useMemo(() => {
-    return staffList.map((s) => {
+    const mapped = staffList.map((s) => {
       const presence = presenceMap.get(s.id);
       const viewingName = presence?.viewingTableName?.trim() || null;
       const isSelf = currentStaff?.id === s.id;
+      const online = !!presence?.online;
       return {
         ...s,
         profileImageSrc: isSelf ? currentStaff?.profileImageSrc || s.profileImageSrc : s.profileImageSrc,
-        online: !!presence?.online,
-        viewingTableName: presence?.online && viewingName ? viewingName : null,
+        online,
+        viewingTableName: online && viewingName ? viewingName : null,
+        lastSeenLabel: !online ? formatLastSeenLabel(presence, now) : null,
         isSelf,
       };
     });
-  }, [staffList, presenceMap, currentStaff?.id, currentStaff?.profileImageSrc]);
+
+    return mapped.sort((a, b) => {
+      const roleDiff = staffRolePriority(a) - staffRolePriority(b);
+      if (roleDiff !== 0) return roleDiff;
+      return `${a.name || ''} ${a.surname || ''}`.localeCompare(
+        `${b.name || ''} ${b.surname || ''}`,
+        'tr'
+      );
+    });
+  }, [staffList, presenceMap, currentStaff?.id, currentStaff?.profileImageSrc, now]);
 
   const onlineCount = rows.filter((r) => r.online).length;
+  const totalCount = rows.length;
 
   const applyProfileImage = async (dataUrl) => {
     if (!currentStaff) return;
@@ -224,17 +170,17 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
     await applyProfileImage(dataUrl);
   };
 
-  const handleRemovePhoto = async () => {
-    await applyProfileImage(null);
-  };
-
   useBackHandler(open, () => {
     if (cropImageSrc) {
       setCropImageSrc(null);
       return;
     }
-    if (showLogout) {
-      setShowLogout(false);
+    if (assignTarget) {
+      setAssignTarget(null);
+      return;
+    }
+    if (deleteTarget) {
+      setDeleteTarget(null);
       return;
     }
     onClose();
@@ -245,20 +191,9 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
       <SidePanel
         open={open}
         onClose={onClose}
-        header={
-          <PanelHeader
-            onClose={onClose}
-            theme={theme}
-            onlineCount={onlineCount}
-            totalCount={rows.length}
-            currentStaff={currentStaff}
-            uploadingProfile={uploadingProfile}
-            onPickPhoto={handlePickPhoto}
-            onRemovePhoto={handleRemovePhoto}
-          />
-        }
+        widthClass="w-[min(292px,84vw)]"
       >
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))]">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <div className="w-9 h-9 border-[3px] border-pink-100 border-t-pink-500 rounded-full animate-spin" />
@@ -267,90 +202,231 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
           ) : rows.length === 0 ? (
             <p className="text-center text-gray-400 py-16 text-sm">Personel bulunamadı</p>
           ) : (
-            <ul className="space-y-2.5">
-              {rows.map((member) => (
-                <li
-                  key={member.id}
-                  className={`group relative overflow-hidden rounded-2xl border transition-all ${
-                    member.isSelf
-                      ? 'border-pink-200/80 bg-gradient-to-br from-pink-50 to-fuchsia-50/50 shadow-sm shadow-pink-100/50'
-                      : 'border-gray-100 bg-white shadow-sm shadow-gray-100/80 hover:border-gray-200 hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 p-3.5">
-                    <div className="relative shrink-0">
-                      <StaffAvatar
-                        name={member.name}
-                        surname={member.surname}
-                        profileImageSrc={member.profileImageSrc}
-                        isManager={member.is_manager}
-                        isChef={member.is_chef}
-                        online={member.online}
-                        size="md"
-                        accent={member.isSelf ? theme.accent : 'from-slate-500 to-slate-700'}
-                      />
-                    </div>
+            <>
+              <div className="flex items-center gap-1.5 mb-2 px-0.5">
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                </span>
+                <p className="text-xs text-gray-600">
+                  <span className="font-semibold text-gray-900">{onlineCount}</span>
+                  <span className="text-gray-400">/{totalCount}</span>
+                  {' '}
+                  <span className="text-gray-500">çevrimiçi</span>
+                </p>
+              </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900 truncate text-sm">
-                          {member.name} {member.surname}
-                        </p>
-                        {member.isSelf && (
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-pink-600 bg-pink-100 px-1.5 py-0.5 rounded-md shrink-0">
-                            Sen
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{staffRoleLabel(member)}</p>
-                      {member.viewingTableName && (
-                        <p className="text-xs text-pink-600 font-medium mt-1 truncate flex items-center gap-1">
-                          <svg className="w-3.5 h-3.5 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M8 6v12M16 6v12" />
-                          </svg>
-                          {member.viewingTableName}&apos;e bakıyor
-                        </p>
+              <ul className="space-y-1.5">
+                {rows.map((member) => {
+                  const isAdmin = !!member.is_admin;
+                  const isBoss = !!member.is_boss && !isAdmin;
+                  const isManager = !!member.is_manager && !isAdmin && !isBoss;
+                  const isSelf = member.isSelf;
+                  const hasLuxuryBg = isSelf || isAdmin || isBoss || isManager;
+                  const cardClass = isSelf
+                    ? getLuxuryCardShell('self')
+                    : isAdmin
+                      ? getLuxuryCardShell('admin')
+                      : isBoss
+                        ? getLuxuryCardShell('boss')
+                        : isManager
+                          ? getLuxuryCardShell('manager')
+                          : 'rounded-xl border border-gray-100 bg-white shadow-sm shadow-gray-100/80';
+
+                  return (
+                    <li key={member.id} className={`group transition-all ${cardClass}`}>
+                      {isSelf && <LuxuryFluidBackdrop variant="self" />}
+                      {isAdmin && !isSelf && (
+                        <>
+                          <LuxuryFluidBackdrop variant="admin" />
+                          <div
+                            className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-gradient-to-b from-amber-700 via-amber-500 to-amber-600/80 z-[1]"
+                            aria-hidden
+                          />
+                        </>
                       )}
-                    </div>
+                      {isBoss && !isSelf && (
+                        <>
+                          <LuxuryFluidBackdrop variant="boss" />
+                          <div
+                            className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-gradient-to-b from-red-800 via-red-500 to-rose-500/85 z-[1]"
+                            aria-hidden
+                          />
+                        </>
+                      )}
+                      {isManager && !isSelf && <LuxuryFluidBackdrop variant="manager" />}
+                      <div className={`relative z-10 flex items-center gap-2.5 ${
+                        hasLuxuryBg && !isSelf ? 'py-2 pr-2 pl-3' : 'p-2 pl-2.5'
+                      }`}>
+                        <div className="relative shrink-0">
+                          {isSelf ? (
+                            <button
+                              type="button"
+                              onClick={() => fileRef.current?.click()}
+                              disabled={uploadingProfile}
+                              className="relative block overflow-visible active:scale-95 transition-transform disabled:opacity-70"
+                              aria-label="Profil fotoğrafı değiştir"
+                            >
+                              <StaffAvatar
+                                name={member.name}
+                                surname={member.surname}
+                                profileImageSrc={member.profileImageSrc}
+                                isManager={member.is_manager}
+                                isChef={member.is_chef}
+                                isAdmin={member.is_admin}
+                                isBoss={member.is_boss}
+                                online={member.online}
+                                size="sm"
+                                accent={theme.accent}
+                              />
+                              <span className="absolute inset-0 rounded-full overflow-hidden bg-black/25 flex items-center justify-center opacity-0 active:opacity-100 transition-opacity">
+                                {uploadingProfile ? (
+                                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+                                  </svg>
+                                )}
+                              </span>
+                            </button>
+                          ) : (
+                            <StaffAvatar
+                              name={member.name}
+                              surname={member.surname}
+                              profileImageSrc={member.profileImageSrc}
+                              isManager={member.is_manager}
+                              isChef={member.is_chef}
+                              isAdmin={member.is_admin}
+                              isBoss={member.is_boss}
+                              online={member.online}
+                              size="sm"
+                              accent="from-slate-500 to-slate-700"
+                            />
+                          )}
+                        </div>
 
-                    <span
-                      className={`text-[11px] font-semibold shrink-0 px-2.5 py-1 rounded-full ${
-                        member.online
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                          : 'bg-gray-100 text-gray-500 border border-gray-200/80'
-                      }`}
-                    >
-                      {member.online ? 'Çevrimiçi' : 'Çevrimdışı'}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <p className={`font-semibold truncate leading-tight ${
+                              isSelf
+                                ? 'text-[13px] text-white'
+                                : 'text-[13px] text-gray-900'
+                            }`}>
+                              {member.name} {member.surname}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {isAdmin && (
+                              <span className={`shrink-0 ${
+                                isSelf
+                                  ? 'text-[8px] font-semibold tracking-wide uppercase text-amber-100 bg-white/10 px-1.5 py-px rounded-full border border-amber-200/30'
+                                  : `${adminBadgeClass} !text-[8px] !px-1.5 !py-px !tracking-wide`
+                              }`}>
+                                Admin
+                              </span>
+                            )}
+                            {isManager && !isSelf && (
+                              <span className={`shrink-0 ${managerBadgeClass}`}>
+                                Müdür
+                              </span>
+                            )}
+                            {(isBoss || (isSelf && member.is_boss && !isAdmin)) && (
+                              <span className={`shrink-0 ${
+                                isSelf
+                                  ? 'text-[8px] font-semibold tracking-wide uppercase text-rose-100 bg-white/10 px-1.5 py-px rounded-full border border-red-200/30'
+                                  : `${bossBadgeClass} !text-[8px] !px-1.5 !py-px !tracking-wide`
+                              }`}>
+                                Patron
+                              </span>
+                            )}
+                            {isSelf && (
+                              <span className="text-[8px] font-bold uppercase tracking-wide text-white/90 bg-white/12 px-1.5 py-px rounded-full border border-white/20 shrink-0">
+                                Sen
+                              </span>
+                            )}
+                            <span className={`text-[10px] leading-none ${
+                              isSelf
+                                ? 'text-white/60'
+                                : isAdmin
+                                  ? 'text-amber-800/45'
+                                  : isBoss
+                                    ? 'text-red-800/45'
+                                    : isManager
+                                      ? 'text-orange-800/45'
+                                      : 'text-gray-400'
+                            }`}>
+                              · {staffRoleLabel(member)}
+                            </span>
+                          </div>
+                          {member.viewingTableName && (
+                            <p className={`text-[10px] font-medium mt-0.5 truncate leading-tight ${
+                              isSelf
+                                ? 'text-white/75'
+                                : isAdmin
+                                  ? 'text-amber-800/65'
+                                  : isBoss
+                                    ? 'text-red-800/65'
+                                    : isManager
+                                      ? 'text-orange-800/65'
+                                      : 'text-pink-600/90'
+                            }`}>
+                              {member.viewingTableName}&apos;e bakıyor
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="shrink-0 flex flex-col items-end gap-1">
+                          <OnlinePill
+                            online={member.online}
+                            compact
+                            light={isSelf}
+                            lastSeenLabel={member.lastSeenLabel}
+                          />
+                          {isCurrentAdmin && (
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setAssignTarget(member)}
+                                className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md active:scale-95 transition-transform ${
+                                  isSelf
+                                    ? 'bg-white/12 text-white border border-white/20'
+                                    : 'bg-violet-50 text-violet-700 border border-violet-100'
+                                }`}
+                              >
+                                Düzenle
+                              </button>
+                              {!isSelf && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTarget(member)}
+                                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-red-50 text-red-600 border border-red-100 active:scale-95 transition-transform"
+                                  aria-label="Personeli sil"
+                                >
+                                  Sil
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
         </div>
 
-        <div className="shrink-0 px-5 pt-3 pb-5 border-t border-gray-100 bg-white space-y-3">
-          <p className="text-[11px] text-center text-gray-400 font-medium tracking-wide">
-            Durumlar canlı güncellenir
-          </p>
-          <button
-            type="button"
-            onClick={() => setShowLogout(true)}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-red-50 text-red-600 font-bold border border-red-100 active:scale-[0.98] transition-all hover:bg-red-100"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-            </svg>
-            Çıkış Yap
-          </button>
-        </div>
-      </SidePanel>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handlePickPhoto}
+        />
 
-      <LogoutModal
-        open={showLogout}
-        onClose={() => setShowLogout(false)}
-        onAfterLogout={onClose}
-      />
+      </SidePanel>
 
       <ProfileImageCropModal
         open={!!cropImageSrc}
@@ -358,6 +434,35 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
         accent={theme.accent}
         onConfirm={handleCropConfirm}
         onCancel={() => setCropImageSrc(null)}
+      />
+
+      <StaffAssignModal
+        open={!!assignTarget}
+        onClose={() => setAssignTarget(null)}
+        member={assignTarget}
+        branchKey={branchKey}
+        accent={theme.accent}
+        onSaved={async (updated) => {
+          setStaffList((prev) =>
+            prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+          );
+          if (currentStaff?.id === updated.id) {
+            updateStaff(updated);
+          }
+          await reloadStaff();
+          showToast('success', 'Güncellendi', 'Personel kaydı güncellendi');
+        }}
+      />
+
+      <StaffDeleteModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        member={deleteTarget}
+        onDeleted={async (staffId) => {
+          setStaffList((prev) => prev.filter((s) => s.id !== staffId));
+          await reloadStaff();
+          showToast('success', 'Silindi', 'Personel kaldırıldı');
+        }}
       />
     </>
   );

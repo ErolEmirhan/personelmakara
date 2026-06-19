@@ -12,6 +12,7 @@ import {
 import { resolveProductImages } from '../services/productImageCache';
 import { getCatalogCache, setCatalogCache } from '../services/catalogCache';
 import { YAN_URUNLER_CATEGORY_ID } from '../config/branch';
+import { MAIN_TABS } from '../constants/nav';
 import { useBranch } from './BranchContext';
 import { useAuth } from './AuthContext';
 
@@ -21,6 +22,7 @@ export function AppProvider({ children }) {
   const { branchKey, configured } = useBranch();
   const { staff } = useAuth();
   const [screen, setScreen] = useState('tables');
+  const [mainTab, setMainTabState] = useState(MAIN_TABS.TABLES);
   const [tables, setTables] = useState([]);
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -33,7 +35,6 @@ export function AppProvider({ children }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [toasts, setToasts] = useState([]);
   const tablesUnsubRef = useRef(null);
   const orderItemsUnsubRef = useRef(null);
   const backHandlersRef = useRef([]);
@@ -53,11 +54,7 @@ export function AppProvider({ children }) {
     return false;
   }, []);
 
-  const showToast = useCallback((type, title, message) => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, type, title, message }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
-  }, []);
+  const showToast = useCallback(() => {}, []);
 
   const loadData = useCallback(async (options = {}) => {
     const { force = false } = typeof options === 'boolean' ? { force: options } : options;
@@ -86,6 +83,43 @@ export function AppProvider({ children }) {
       showToast('error', 'Hata', 'Veri yüklenemedi');
     } finally {
       setLoading(false);
+    }
+  }, [configured, branchKey, showToast]);
+
+  const bootstrapCatalog = useCallback(async (onProgress) => {
+    const report = (value) => onProgress?.(Math.min(100, Math.max(0, value)));
+    if (!configured || !branchKey) {
+      report(100);
+      return;
+    }
+
+    report(6);
+    try {
+      const cached = await getCatalogCache(branchKey);
+      report(20);
+      if (cached?.categories?.length) {
+        setCategories(cached.categories);
+        setProducts(cached.products || []);
+        setSelectedCategory((prev) => prev ?? cached.categories[0]?.id ?? null);
+        report(100);
+        return;
+      }
+
+      report(28);
+      const cats = await fetchCategories();
+      report(48);
+      const prods = await fetchProducts();
+      report(64);
+      setCategories(cats);
+      const withImages = await resolveProductImages(branchKey, prods);
+      report(86);
+      setProducts(withImages);
+      await setCatalogCache(branchKey, { categories: cats, products: withImages });
+      setSelectedCategory((prev) => prev ?? cats[0]?.id ?? null);
+      report(100);
+    } catch {
+      showToast('error', 'Hata', 'Veri yüklenemedi');
+      report(100);
     }
   }, [configured, branchKey, showToast]);
 
@@ -145,14 +179,6 @@ export function AppProvider({ children }) {
     }
   }, []);
 
-  const selectTable = useCallback(async (table) => {
-    setSelectedTable(table);
-    setScreen('order');
-    setCart([]);
-    setOrderNote('');
-    await loadExistingOrders(table.id);
-  }, [loadExistingOrders]);
-
   const goBackToTables = useCallback(() => {
     setScreen('tables');
     setSelectedTable(null);
@@ -161,6 +187,22 @@ export function AppProvider({ children }) {
     setSearchQuery('');
     setCurrentOrderItems([]);
   }, []);
+
+  const setMainTab = useCallback((tab) => {
+    if (tab !== MAIN_TABS.TABLES && screen === 'order') {
+      goBackToTables();
+    }
+    setMainTabState(tab);
+  }, [screen, goBackToTables]);
+
+  const selectTable = useCallback(async (table) => {
+    setMainTabState(MAIN_TABS.TABLES);
+    setSelectedTable(table);
+    setScreen('order');
+    setCart([]);
+    setOrderNote('');
+    await loadExistingOrders(table.id);
+  }, [loadExistingOrders]);
 
   const addToCart = useCallback((product, options = {}) => {
     const { isGift = false, extraNote = '', quantity = 1 } = options;
@@ -224,6 +266,7 @@ export function AppProvider({ children }) {
     <AppContext.Provider
       value={{
         screen, setScreen,
+        mainTab, setMainTab,
         tables, setTables,
         categories, products,
         selectedTable, setSelectedTable,
@@ -233,8 +276,8 @@ export function AppProvider({ children }) {
         currentOrderItems, setCurrentOrderItems,
         searchQuery, setSearchQuery,
         loading, drawerOpen, setDrawerOpen,
-        toasts, showToast,
-        loadData, loadExistingOrders,
+        showToast,
+        loadData, bootstrapCatalog, loadExistingOrders,
         selectTable, goBackToTables,
         addToCart, updateCartItem, removeFromCart, clearCart,
         sendOrder, cartTotal, cartCount,
