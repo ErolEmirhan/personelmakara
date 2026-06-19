@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -17,16 +17,19 @@ export function OrderScreen() {
   } = useApp();
   const [cancelItem, setCancelItem] = useState(null);
 
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [selectedTable?.id]);
+
   const filteredProducts = useMemo(() => {
-    let list = products;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      return products.filter((p) => p.name.toLowerCase().includes(q));
+    }
     if (selectedCategory) {
-      list = list.filter((p) => p.category_id === selectedCategory);
+      return products.filter((p) => p.category_id === selectedCategory);
     }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter((p) => p.name.toLowerCase().includes(q));
-    }
-    return list;
+    return products;
   }, [products, selectedCategory, searchQuery]);
 
   const categoryRows = useMemo(() => {
