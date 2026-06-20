@@ -58,13 +58,54 @@ export async function getCroppedImageDataUrl(imageSrc, pixelCrop, { maxEdge = 72
   return canvas.toDataURL('image/jpeg', quality);
 }
 
-export const SUPPORT_IMAGE_MAX_BYTES = 480_000;
+/** Firestore belge limiti (~1MB) için base64 üst sınırı */
+export const SUPPORT_IMAGE_MAX_BYTES = 750_000;
 
 export function validateSupportImageDataUrl(dataUrl) {
   if (!dataUrl?.startsWith('data:image/')) {
     throw new Error('Geçersiz görsel');
   }
   if (dataUrl.length > SUPPORT_IMAGE_MAX_BYTES) {
-    throw new Error('Görsel çok büyük — daha küçük alan seçin');
+    throw new Error('Görsel çok büyük — daha küçük bir fotoğraf seçin');
   }
+}
+
+/** Destek mesajı: kırpmadan orijinal en-boy; sadece limit aşılırsa oran korunarak sıkıştırılır */
+export async function prepareSupportImageDataUrl(file) {
+  const raw = await fileToDataUrl(file);
+  if (raw.length <= SUPPORT_IMAGE_MAX_BYTES) {
+    return raw;
+  }
+
+  const image = await createImage(raw);
+  const srcW = image.naturalWidth || image.width;
+  const srcH = image.naturalHeight || image.height;
+  if (!srcW || !srcH) throw new Error('Görsel boyutu okunamadı');
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Görsel işlenemedi');
+
+  const encode = (width, height, quality) => {
+    canvas.width = width;
+    canvas.height = height;
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+  };
+
+  for (let quality = 0.9; quality >= 0.55; quality -= 0.05) {
+    const out = encode(srcW, srcH, quality);
+    if (out.length <= SUPPORT_IMAGE_MAX_BYTES) return out;
+  }
+
+  for (let scale = 0.92; scale >= 0.2; scale -= 0.08) {
+    const width = Math.max(1, Math.round(srcW * scale));
+    const height = Math.max(1, Math.round(srcH * scale));
+    for (let quality = 0.88; quality >= 0.55; quality -= 0.08) {
+      const out = encode(width, height, quality);
+      if (out.length <= SUPPORT_IMAGE_MAX_BYTES) return out;
+    }
+  }
+
+  throw new Error('Görsel çok büyük — daha küçük bir fotoğraf seçin');
 }

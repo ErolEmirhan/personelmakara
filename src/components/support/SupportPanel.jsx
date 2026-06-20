@@ -18,8 +18,7 @@ import {
 import { isStaffAdmin } from '../../utils/staffRole';
 import { formatLastSeen } from '../../utils/formatLastSeen';
 import { StaffAvatar } from '../ui/StaffAvatar';
-import { ProfileImageCropModal } from '../modals/ProfileImageCropModal';
-import { fileToDataUrl, validateSupportImageDataUrl } from '../../services/staffProfileImage';
+import { prepareSupportImageDataUrl } from '../../services/staffProfileImage';
 
 function FlagIcon({ className = 'w-5 h-5' }) {
   return (
@@ -121,7 +120,7 @@ function MessageImage({ src, onOpen }) {
       <img
         src={src}
         alt="Ek görsel"
-        className="max-w-full max-h-56 w-auto rounded-xl object-cover"
+        className="max-w-full max-h-80 w-auto rounded-xl object-contain"
       />
     </button>
   );
@@ -219,52 +218,30 @@ function SupportComposer({
   accentGradient = 'from-violet-500 to-fuchsia-500',
 }) {
   const fileRef = useRef(null);
-  const [cropSrc, setCropSrc] = useState(null);
+  const [pickingImage, setPickingImage] = useState(false);
   const canSend = (!!value.trim() || !!pendingImage) && !sending;
 
   const handleFilePick = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || pickingImage) return;
+    setPickingImage(true);
     try {
-      const dataUrl = await fileToDataUrl(file);
-      setCropSrc(dataUrl);
+      const dataUrl = await prepareSupportImageDataUrl(file);
+      onPendingImageChange(dataUrl);
     } catch (err) {
       onImageError?.(err.message || 'Görsel seçilemedi');
+    } finally {
+      setPickingImage(false);
     }
   };
 
   return (
-    <>
-      <ProfileImageCropModal
-        open={!!cropSrc}
-        imageSrc={cropSrc}
-        aspect={4 / 3}
-        maxEdge={720}
-        quality={0.82}
-        useProfileCrop={false}
-        title="Görseli Kırp"
-        confirmLabel="Ekle"
-        hint="Görseli konumlandırın ve yakınlaştırın"
-        accent={accentGradient}
-        onConfirm={(dataUrl) => {
-          try {
-            validateSupportImageDataUrl(dataUrl);
-            onPendingImageChange(dataUrl);
-            setCropSrc(null);
-          } catch (err) {
-            onImageError?.(err.message || 'Görsel işlenemedi');
-            setCropSrc(null);
-          }
-        }}
-        onCancel={() => setCropSrc(null)}
-      />
-
       <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-sm">
         {pendingImage && (
           <div className="mb-2 flex items-center gap-2">
             <div className="relative shrink-0">
-              <img src={pendingImage} alt="" className="w-16 h-16 rounded-xl object-cover border border-slate-200" />
+              <img src={pendingImage} alt="" className="max-w-[88px] max-h-[88px] rounded-xl object-contain border border-slate-200 bg-slate-50" />
               <button
                 type="button"
                 onClick={() => onPendingImageChange(null)}
@@ -281,7 +258,7 @@ function SupportComposer({
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            disabled={sending}
+            disabled={sending || pickingImage}
             className="shrink-0 w-11 h-11 rounded-2xl border border-slate-200 bg-slate-50 text-slate-500 flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
             aria-label="Görsel ekle"
           >
@@ -324,7 +301,6 @@ function SupportComposer({
           </button>
         </div>
       </div>
-    </>
   );
 }
 
