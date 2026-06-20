@@ -35,7 +35,7 @@ export function StaffAnnouncementComposer({ branchKey, staff, theme, showToast }
         const total = pushResult?.totalTokens ?? 0;
 
         if (sent > 0) {
-          setPushNote(`Push: ${sent} cihaza iletildi${failed > 0 ? ` (${failed} başarısız)` : ''}.`);
+          setPushNote(`Push: ${sent}/${total} cihaza iletildi${failed > 0 ? ` (${failed} başarısız)` : ''}.`);
         } else if (total === 0) {
           setPushNote('Push: Kayıtlı cihaz yok. Personel Ayarlar → Ana ekran push → Cihazı kaydet demeli.');
         } else {

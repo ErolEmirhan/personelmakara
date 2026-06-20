@@ -201,6 +201,7 @@ export async function requestPushOnAppEntry(branchKey, staffId) {
   }
 
   if (permission === 'granted') {
+    ensureForegroundPushHandler();
     if (!isPushRegisteredLocally(staffId)) {
       return registerStaffPushNotifications(branchKey, staffId);
     }
@@ -226,12 +227,55 @@ function attachForegroundMessageHandler(messaging) {
   onMessage(messaging, (payload) => {
     const title = payload.notification?.title || payload.data?.title || 'MAKARA';
     const body = payload.notification?.body || payload.data?.body || '';
+    const data = payload.data || {};
+
+    showLocalNotification(title, body, data);
+
     window.dispatchEvent(
       new CustomEvent('makara-push-message', {
-        detail: { title, body, data: payload.data || {} },
+        detail: { title, body, data },
       })
     );
   });
+}
+
+function showLocalNotification(title, body, data = {}) {
+  if (typeof window === 'undefined' || Notification.permission !== 'granted') return;
+
+  const base = import.meta.env.BASE_URL || '/';
+  const icon = new URL('icons/icon-192.png', `${window.location.origin}${base}`).href;
+
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((registration) => {
+          registration.showNotification(title, {
+            body,
+            icon,
+            badge: icon,
+            tag: 'makara-staff-announcement',
+            data,
+          });
+        })
+        .catch(() => {
+          new Notification(title, { body, icon, tag: 'makara-staff-announcement', data });
+        });
+      return;
+    }
+    new Notification(title, { body, icon, tag: 'makara-staff-announcement', data });
+  } catch {
+    /* iOS PWA ön planda sistem bildirimi engelleyebilir */
+  }
+}
+
+export function ensureForegroundPushHandler() {
+  const app = getMainApp();
+  if (!app || Notification.permission !== 'granted') return;
+  try {
+    attachForegroundMessageHandler(getMessaging(app));
+  } catch (err) {
+    console.warn('ensureForegroundPushHandler:', err);
+  }
 }
 
 export async function fetchPushRegistrationStatus(branchKey, staffId) {
@@ -243,6 +287,19 @@ export async function fetchPushRegistrationStatus(branchKey, staffId) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.error || 'Push durumu alınamadı');
+  }
+  return data;
+}
+
+export async function sendSelfTestPush(branchKey, staffId) {
+  const res = await fetch(apiUrl('api/push-self-test'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchKey, staffId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Test push gönderilemedi');
   }
   return data;
 }

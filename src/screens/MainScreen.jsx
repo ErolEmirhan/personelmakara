@@ -19,6 +19,7 @@ import { NotificationsScreen } from './NotificationsScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
 import { PushSetupBanner, resolvePushSetupMessage, retryPushRegistration } from '../components/notifications/PushSetupBanner';
+import { IncomingPushBanner } from '../components/notifications/IncomingPushBanner';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
 import { shouldShowBroadcast } from '../utils/notificationPrefs';
@@ -30,6 +31,7 @@ export function MainScreen() {
   const [broadcast, setBroadcast] = useState(null);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [pushBanner, setPushBanner] = useState('');
+  const [incomingPush, setIncomingPush] = useState(null);
 
   useAndroidBackNavigation({ accountOpen: quickActionsOpen, setAccountOpen: setQuickActionsOpen });
   useBackHandler(!!broadcast, () => setBroadcast(null));
@@ -74,7 +76,10 @@ export function MainScreen() {
 
     const onPushMessage = (event) => {
       const detail = event.detail || {};
-      showToast('info', detail.title || 'Bildirim', detail.body || '');
+      setIncomingPush({
+        title: detail.title || 'Bildirim',
+        body: detail.body || '',
+      });
       setMainTab(MAIN_TABS.NOTIFICATIONS);
     };
     window.addEventListener('makara-push-message', onPushMessage);
@@ -84,7 +89,7 @@ export function MainScreen() {
       navigator.serviceWorker?.removeEventListener('message', onSwMessage);
       window.removeEventListener('makara-push-message', onPushMessage);
     };
-  }, [staff?.id, branchKey, setMainTab, showToast]);
+  }, [staff?.id, branchKey, setMainTab]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -110,6 +115,17 @@ export function MainScreen() {
   return (
     <div className={`min-h-dvh bg-gray-50 ${theme.isSultan ? 'theme-sultan' : ''}`}>
       <AppHeader />
+      {incomingPush && (
+        <IncomingPushBanner
+          title={incomingPush.title}
+          body={incomingPush.body}
+          onOpen={() => {
+            setMainTab(MAIN_TABS.NOTIFICATIONS);
+            setIncomingPush(null);
+          }}
+          onDismiss={() => setIncomingPush(null)}
+        />
+      )}
       {pushBanner && (
         <PushSetupBanner
           branchKey={branchKey}

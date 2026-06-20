@@ -106,28 +106,32 @@ export default async function handler(req, res) {
     const invalidTokens = [];
     let firstError = null;
 
+    const iconUrl = origin ? `${origin}/icons/icon-192.png` : '/icons/icon-192.png';
+    const openUrl = origin ? `${origin}/?tab=notifications` : '/?tab=notifications';
+
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
       const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
       const response = await messaging.sendEachForMulticast({
         tokens: chunk,
-        notification: {
-          title: notificationTitle,
-          body: notificationBody,
-        },
         data: {
           type: 'staff_announcement',
-          branchKey,
-          announcementId: announcementId || '',
+          branchKey: String(branchKey),
+          announcementId: String(announcementId || ''),
           title: notificationTitle,
           body: notificationBody,
         },
         webpush: {
+          headers: {
+            Urgency: 'high',
+            TTL: '86400',
+          },
           fcmOptions: {
-            link: origin ? `${origin}/?tab=notifications` : '/?tab=notifications',
+            link: openUrl,
           },
           notification: {
-            icon: '/icons/icon-192.png',
-            badge: '/icons/icon-192.png',
+            title: notificationTitle,
+            body: notificationBody,
+            icon: iconUrl,
           },
         },
       });

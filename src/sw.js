@@ -22,23 +22,33 @@ firebase.initializeApp({
   appId: '1:216769654742:web:16792742d4613f4269be77',
 });
 
-firebase.messaging().onBackgroundMessage((payload) => {
-  const title =
-    payload.notification?.title ||
-    payload.data?.title ||
-    'MAKARA · Ekip bildirimi';
-  const body =
-    payload.notification?.body ||
-    payload.data?.body ||
-    '';
+function parsePushPayload(payload) {
+  const data = payload?.data || {};
+  return {
+    title:
+      payload?.notification?.title ||
+      data.title ||
+      'MAKARA · Ekip bildirimi',
+    body: payload?.notification?.body || data.body || '',
+    data,
+  };
+}
 
+function showPushNotification(title, body, data) {
+  const icon = new URL('icons/icon-192.png', self.location.origin).href;
   return self.registration.showNotification(title, {
     body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon,
+    badge: icon,
     tag: 'makara-staff-announcement',
-    data: payload.data || {},
+    data,
+    renotify: true,
   });
+}
+
+firebase.messaging().onBackgroundMessage((payload) => {
+  const { title, body, data } = parsePushPayload(payload);
+  return showPushNotification(title, body, data);
 });
 
 self.addEventListener('notificationclick', (event) => {

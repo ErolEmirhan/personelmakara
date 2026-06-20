@@ -26,6 +26,7 @@ import {
   isPushSupported,
   pushRegistrationErrorMessage,
   registerStaffPushNotifications,
+  sendSelfTestPush,
   syncStaffPushToken,
 } from '../services/pushNotifications';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
@@ -112,6 +113,7 @@ export function SettingsScreen() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushRegistered, setPushRegistered] = useState(false);
   const [pushStatusNote, setPushStatusNote] = useState('');
+  const [pushTestBusy, setPushTestBusy] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const pushAvailable = isPushConfiguredForBranch(branchKey);
 
@@ -245,6 +247,24 @@ export function SettingsScreen() {
     const next = { ...notifPrefs, [key]: value };
     setNotifPrefs(next);
     saveNotificationPrefs(staff.id, next);
+  };
+
+  const handleTestPush = async () => {
+    if (!staff?.id || !pushAvailable || pushTestBusy || !pushRegistered) return;
+    setPushTestBusy(true);
+    setPushStatusNote('');
+    try {
+      const result = await sendSelfTestPush(branchKey, staff.id);
+      if ((result.sent ?? 0) > 0) {
+        setPushStatusNote('Test bildirimi gönderildi. Uygulamayı arka plana alın veya kapatın, birkaç saniye bekleyin.');
+      } else {
+        setPushStatusNote(`Test gönderilemedi.${result.firstError ? ` (${result.firstError})` : ''}`);
+      }
+    } catch (err) {
+      setPushStatusNote(err.message || 'Test push başarısız');
+    } finally {
+      setPushTestBusy(false);
+    }
   };
 
   const handleEnablePush = async () => {
@@ -496,6 +516,16 @@ export function SettingsScreen() {
                       className="ml-auto text-xs font-bold px-3 py-2 rounded-xl bg-violet-600 text-white disabled:opacity-45 active:scale-[0.98] transition-all"
                     >
                       {pushBusy ? 'Kaydediliyor…' : 'Cihazı kaydet'}
+                    </button>
+                  )}
+                  {pushRegistered && (
+                    <button
+                      type="button"
+                      onClick={handleTestPush}
+                      disabled={pushTestBusy}
+                      className="ml-auto text-xs font-bold px-3 py-2 rounded-xl bg-slate-900 text-white disabled:opacity-45 active:scale-[0.98] transition-all"
+                    >
+                      {pushTestBusy ? 'Gönderiliyor…' : 'Test bildirimi'}
                     </button>
                   )}
                 </div>
