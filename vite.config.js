@@ -11,8 +11,18 @@ export default defineConfig(({ mode }) => ({
     localApiPlugin(mode),
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       injectRegister: null,
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
       includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png', 'makara.png'],
       manifest: {
         name: 'MAKARA Mobil Sipariş',
@@ -41,11 +51,8 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         navigateFallback: `${base}index.html`,
+        navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        importScripts: ['firebase-messaging-sw.js'],
-        cleanupOutdatedCaches: true,
-        skipWaiting: true,
-        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\/image-proxy/,

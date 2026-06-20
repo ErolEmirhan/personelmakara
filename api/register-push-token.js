@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     const { db } = getAdminForBranch(branchKey);
 
     const staffSnap = await db.collection(STAFF_COLLECTION).doc(String(staffId)).get();
-    if (!staffSnap.exists()) {
+    if (!staffSnap.exists) {
       return json(res, 403, { error: 'Personel bulunamadı' });
     }
 

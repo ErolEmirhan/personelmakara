@@ -52,6 +52,17 @@ function getMainApp() {
 
 async function waitForServiceWorkerRegistration() {
   const scope = import.meta.env.BASE_URL || '/';
+
+  if (!navigator.serviceWorker.controller) {
+    await new Promise((resolve) => {
+      const timeout = window.setTimeout(resolve, 8000);
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.clearTimeout(timeout);
+        resolve();
+      }, { once: true });
+    });
+  }
+
   let registration = await navigator.serviceWorker.getRegistration(scope);
 
   if (!registration) {
@@ -60,7 +71,7 @@ async function waitForServiceWorkerRegistration() {
   }
 
   if (!registration) {
-    throw new Error('Service worker kaydı bulunamadı — PWA ana ekrandan açılmalı');
+    throw new Error('Service worker kaydı bulunamadı — uygulamayı ana ekrandan açın');
   }
 
   if (!registration.active) {
@@ -70,10 +81,14 @@ async function waitForServiceWorkerRegistration() {
         resolve();
         return;
       }
-      worker.addEventListener('statechange', () => {
-        if (worker.state === 'activated') resolve();
-      });
-      setTimeout(resolve, 10_000);
+      const onState = () => {
+        if (worker.state === 'activated') {
+          worker.removeEventListener('statechange', onState);
+          resolve();
+        }
+      };
+      worker.addEventListener('statechange', onState);
+      setTimeout(resolve, 12_000);
     });
   }
 
@@ -186,6 +201,9 @@ export async function requestPushOnAppEntry(branchKey, staffId) {
   }
 
   if (permission === 'granted') {
+    if (!isPushRegisteredLocally(staffId)) {
+      return registerStaffPushNotifications(branchKey, staffId);
+    }
     return syncStaffPushToken(branchKey, staffId);
   }
 
@@ -214,6 +232,19 @@ function attachForegroundMessageHandler(messaging) {
       })
     );
   });
+}
+
+export async function fetchPushRegistrationStatus(branchKey, staffId) {
+  const res = await fetch(apiUrl('api/push-status'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchKey, staffId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Push durumu alınamadı');
+  }
+  return data;
 }
 
 export async function sendAnnouncementPush({ branchKey, staffId, title, message, announcementId }) {

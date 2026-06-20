@@ -97,6 +97,10 @@ export default async function handler(req, res) {
     const notificationTitle = title || 'MAKARA · Ekip bildirimi';
     const notificationBody = message.length > 180 ? `${message.slice(0, 177)}…` : message;
 
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    const protocol = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+    const origin = host ? `${protocol}://${host}` : '';
+
     let sent = 0;
     let failed = 0;
     const invalidTokens = [];
@@ -119,7 +123,7 @@ export default async function handler(req, res) {
         },
         webpush: {
           fcmOptions: {
-            link: '/?tab=notifications',
+            link: origin ? `${origin}/?tab=notifications` : '/?tab=notifications',
           },
           notification: {
             icon: '/icons/icon-192.png',

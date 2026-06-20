@@ -19,6 +19,7 @@ import {
   saveNotificationPrefs,
 } from '../utils/notificationPrefs';
 import {
+  fetchPushRegistrationStatus,
   getPushPermissionState,
   isPushConfiguredForBranch,
   isPushRegisteredLocally,
@@ -131,10 +132,20 @@ export function SettingsScreen() {
 
     if (Notification.permission !== 'granted') return;
 
-    syncStaffPushToken(branchKey, staff.id).then((result) => {
+    syncStaffPushToken(branchKey, staff.id).then(async (result) => {
       if (result.ok) {
         setPushRegistered(true);
-        setPushStatusNote('Bu cihaz push için kayıtlı.');
+        try {
+          const status = await fetchPushRegistrationStatus(branchKey, staff.id);
+          if (status.staffRegistered) {
+            setPushStatusNote('Bu cihaz sunucuda kayıtlı — push bildirimleri aktif.');
+          } else {
+            setPushRegistered(false);
+            setPushStatusNote('Cihaz kaydı sunucuya ulaşmadı. «Cihazı kaydet» ile tekrar deneyin.');
+          }
+        } catch (err) {
+          setPushStatusNote(err.message || 'Sunucu kaydı doğrulanamadı');
+        }
       } else if (result.reason !== 'not_granted') {
         setPushStatusNote(pushRegistrationErrorMessage(result.reason, result.error));
       }
@@ -251,7 +262,17 @@ export function SettingsScreen() {
       setPushPermission(permission);
       if (result.ok) {
         setPushRegistered(true);
-        setPushStatusNote('Bu cihaz push için kayıtlı. Yönetici bildirimi gelince ana ekranda görünür.');
+        try {
+          const status = await fetchPushRegistrationStatus(branchKey, staff.id);
+          if (status.staffRegistered) {
+            setPushStatusNote('Bu cihaz sunucuda kayıtlı — push bildirimleri aktif.');
+          } else {
+            setPushRegistered(false);
+            setPushStatusNote('Kayıt başarısız — sunucuya token yazılamadı.');
+          }
+        } catch (err) {
+          setPushStatusNote(err.message || 'Sunucu kaydı doğrulanamadı');
+        }
         showToast('success', 'Aktif', 'Ana ekran bildirimleri açıldı');
       } else {
         setPushRegistered(false);

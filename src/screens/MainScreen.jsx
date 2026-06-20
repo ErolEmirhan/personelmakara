@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { startStaffPresence, stopStaffPresence } from '../services/firebaseService';
 import {
-  getPushPermissionState,
   isPushConfiguredForBranch,
   requestPushOnAppEntry,
 } from '../services/pushNotifications';
@@ -19,6 +18,7 @@ import { OrdersScreen } from './OrdersScreen';
 import { NotificationsScreen } from './NotificationsScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
+import { PushSetupBanner, resolvePushSetupMessage, retryPushRegistration } from '../components/notifications/PushSetupBanner';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
 import { shouldShowBroadcast } from '../utils/notificationPrefs';
@@ -29,6 +29,7 @@ export function MainScreen() {
   const { screen, mainTab, loadData, setMainTab, showToast } = useApp();
   const [broadcast, setBroadcast] = useState(null);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [pushBanner, setPushBanner] = useState('');
 
   useAndroidBackNavigation({ accountOpen: quickActionsOpen, setAccountOpen: setQuickActionsOpen });
   useBackHandler(!!broadcast, () => setBroadcast(null));
@@ -54,13 +55,14 @@ export function MainScreen() {
 
     let cancelled = false;
     (async () => {
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
       if (cancelled) return;
 
-      const permission = await getPushPermissionState();
-      if (permission === 'denied') return;
+      const result = await requestPushOnAppEntry(branchKey, staff.id);
+      if (cancelled) return;
 
-      await requestPushOnAppEntry(branchKey, staff.id);
+      const message = await resolvePushSetupMessage(branchKey, staff.id, result);
+      if (!cancelled) setPushBanner(message);
     })();
 
     const onSwMessage = (event) => {
@@ -108,6 +110,19 @@ export function MainScreen() {
   return (
     <div className={`min-h-dvh bg-gray-50 ${theme.isSultan ? 'theme-sultan' : ''}`}>
       <AppHeader />
+      {pushBanner && (
+        <PushSetupBanner
+          branchKey={branchKey}
+          staffId={staff?.id}
+          message={pushBanner}
+          onRetry={async () => {
+            const result = await retryPushRegistration(branchKey, staff.id);
+            const message = await resolvePushSetupMessage(branchKey, staff.id, result);
+            setPushBanner(message);
+          }}
+          onDismiss={() => setPushBanner('')}
+        />
+      )}
       <main style={{ paddingTop: MAIN_CONTENT_TOP_PADDING }}>
         {renderContent()}
       </main>

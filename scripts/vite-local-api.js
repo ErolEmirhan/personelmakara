@@ -30,6 +30,8 @@ const API_ROUTES = {
   '/mobile/api/push-announcement': 'push-announcement.js',
   '/api/register-push-token': 'register-push-token.js',
   '/mobile/api/register-push-token': 'register-push-token.js',
+  '/api/push-status': 'push-status.js',
+  '/mobile/api/push-status': 'push-status.js',
 };
 
 /** Vite dev sunucusunda Vercel API route'larını çalıştırır */
