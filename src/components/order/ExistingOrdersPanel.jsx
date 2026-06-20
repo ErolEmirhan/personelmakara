@@ -118,44 +118,56 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
           <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
             Mevcut Siparişler
           </p>
-          {!expanded && (
-            <p className="text-[11px] text-emerald-600/80 mt-0.5">
-              {items.length} ürün · {totalAmount.toFixed(2)} ₺
-            </p>
-          )}
+          <div
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+              expanded ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+            }`}
+          >
+            <div className="overflow-hidden min-h-0">
+              <p className="text-[11px] text-emerald-600/80 mt-0.5">
+                {items.length} ürün · {totalAmount.toFixed(2)} ₺
+              </p>
+            </div>
+          </div>
         </div>
 
-        {!expanded && groups.length > 0 && (
-          <div className="flex items-center shrink-0 pr-1">
-            {groups.slice(0, 5).map((group, i) => (
-              <div
-                key={group.key}
-                className="ring-2 ring-emerald-50 rounded-full"
-                style={{ marginLeft: i === 0 ? 0 : -10, zIndex: 10 - i }}
-              >
-                <StaffAvatar
-                  name={group.name}
-                  surname={group.surname}
-                  profileImageSrc={group.profileImageSrc}
-                  isManager={group.is_manager}
-                  isChef={group.is_chef}
-                  isAdmin={group.is_admin}
-                  isBoss={group.is_boss}
-                  size="2xs"
-                  accent={theme.accent}
-                />
-              </div>
-            ))}
-            {groups.length > 5 && (
-              <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-white rounded-full w-7 h-7 flex items-center justify-center ring-2 ring-white shadow-sm">
-                +{groups.length - 5}
-              </span>
-            )}
+        <div
+          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            expanded || groups.length === 0 ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+          }`}
+        >
+          <div className="overflow-hidden min-h-0">
+            <div className="flex items-center shrink-0 pr-1">
+              {groups.slice(0, 5).map((group, i) => (
+                <div
+                  key={group.key}
+                  className="ring-2 ring-emerald-50 rounded-full"
+                  style={{ marginLeft: i === 0 ? 0 : -10, zIndex: 10 - i }}
+                >
+                  <StaffAvatar
+                    name={group.name}
+                    surname={group.surname}
+                    profileImageSrc={group.profileImageSrc}
+                    isManager={group.is_manager}
+                    isChef={group.is_chef}
+                    isAdmin={group.is_admin}
+                    isBoss={group.is_boss}
+                    size="2xs"
+                    accent={theme.accent}
+                  />
+                </div>
+              ))}
+              {groups.length > 5 && (
+                <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-white rounded-full w-7 h-7 flex items-center justify-center ring-2 ring-white shadow-sm">
+                  +{groups.length - 5}
+                </span>
+              )}
+            </div>
           </div>
-        )}
+        </div>
 
         <svg
-          className={`w-5 h-5 text-emerald-700 shrink-0 transition-transform duration-200 ${
+          className={`w-5 h-5 text-emerald-700 shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             expanded ? 'rotate-180' : ''
           }`}
           fill="none"
@@ -168,9 +180,18 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
         </svg>
       </button>
 
-      {expanded && (
-        <div className="px-4 pb-4 space-y-4 border-t border-emerald-200/70">
-          {groups.map((group) => {
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="overflow-hidden min-h-0">
+          <div
+            className={`px-4 pb-4 space-y-4 border-t border-emerald-200/70 transition-opacity duration-300 ease-out ${
+              expanded ? 'opacity-100 delay-75' : 'opacity-0'
+            }`}
+          >
+            {groups.map((group) => {
             const groupTotal = group.items.reduce(
               (sum, item) =>
                 sum + (item.isGift ? 0 : (Number(item.price) || 0) * (Number(item.quantity) || 0)),
@@ -262,8 +283,9 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
             <span className="text-emerald-800 font-semibold">Toplam</span>
             <span className="text-emerald-900 font-bold">{totalAmount.toFixed(2)} ₺</span>
           </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
