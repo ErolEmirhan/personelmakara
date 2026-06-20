@@ -17,11 +17,21 @@ import {
 } from '../../constants/supportTickets';
 import { isStaffAdmin } from '../../utils/staffRole';
 import { formatLastSeen } from '../../utils/formatLastSeen';
+import { StaffAvatar } from '../ui/StaffAvatar';
 
 function FlagIcon({ className = 'w-5 h-5' }) {
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18M3 4.5h12.5a1.5 1.5 0 011.5 1.5v0a1.5 1.5 0 001.5 1.5H21V18H6.5a1.5 1.5 0 00-1.5 1.5v0" />
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <path d="M4 22v-7" />
     </svg>
   );
 }
@@ -90,28 +100,119 @@ function TicketListItem({ ticket, onClick, isAdminView }) {
   );
 }
 
-function MessageBubble({ message, isOwn, accentSolid }) {
+function MessageBubble({ message, isOwn, accentSolid, fallbackProfileSrc }) {
   const time = message.createdAtMs ? formatLastSeen(message.createdAtMs) : '';
+  const profileSrc = message.profileImageSrc || fallbackProfileSrc || null;
+  const displayName = `${message.staffName} ${message.staffSurname}`.trim();
+
+  if (message.isAdmin) {
+    return (
+      <div className="flex justify-start mb-4">
+        <div className="max-w-[85%] rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm bg-white border border-slate-100 text-slate-800">
+          <p className="text-[10px] font-bold mb-1 text-violet-600">Admin</p>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+          {time && <p className="text-[9px] mt-1.5 text-slate-400">{time}</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-3`}>
-      <div
-        className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
-          isOwn
-            ? 'rounded-br-md text-white'
-            : 'rounded-bl-md bg-white border border-slate-100 text-slate-800'
-        }`}
-        style={isOwn ? { background: `linear-gradient(135deg, ${accentSolid} 0%, ${accentSolid}dd 100%)` } : undefined}
-      >
-        {!isOwn && (
-          <p className="text-[10px] font-bold mb-1 text-violet-600">
-            {message.isAdmin ? 'Admin' : `${message.staffName} ${message.staffSurname}`.trim()}
-          </p>
-        )}
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
-        {time && (
-          <p className={`text-[9px] mt-1.5 ${isOwn ? 'text-white/70' : 'text-slate-400'}`}>{time}</p>
-        )}
+    <div className={`flex items-end gap-2.5 mb-4 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+      {!isOwn && (
+        <StaffAvatar
+          size="2xs"
+          name={message.staffName}
+          surname={message.staffSurname}
+          profileImageSrc={profileSrc}
+        />
+      )}
+      <div className={`flex flex-col max-w-[78%] min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
+        <p className={`text-[10px] font-semibold text-slate-500 mb-1 px-0.5 ${isOwn ? 'text-right' : 'text-left'}`}>
+          {displayName}
+        </p>
+        <div
+          className={`rounded-2xl px-3.5 py-2.5 shadow-sm ${
+            isOwn
+              ? 'rounded-br-md text-white'
+              : 'rounded-bl-md bg-white border border-slate-100 text-slate-800'
+          }`}
+          style={isOwn ? { background: `linear-gradient(135deg, ${accentSolid} 0%, ${accentSolid}dd 100%)` } : undefined}
+        >
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+          {time && (
+            <p className={`text-[9px] mt-1.5 ${isOwn ? 'text-white/70' : 'text-slate-400'}`}>{time}</p>
+          )}
+        </div>
+      </div>
+      {isOwn && (
+        <StaffAvatar
+          size="2xs"
+          name={message.staffName}
+          surname={message.staffSurname}
+          profileImageSrc={profileSrc}
+        />
+      )}
+    </div>
+  );
+}
+
+function ComposerBar({ value, onChange, onSend, sending, placeholder, accentSolid }) {
+  return (
+    <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-sm">
+      <div className="flex gap-2 items-end">
+        <textarea
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          rows={1}
+          maxLength={2000}
+          className="flex-1 min-h-[44px] max-h-28 px-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/25 focus:border-violet-300 focus:bg-white"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+        />
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={!value.trim() || sending}
+          className="shrink-0 w-11 h-11 rounded-2xl text-white flex items-center justify-center disabled:opacity-40 active:scale-95 transition-all"
+          style={{ background: accentSolid }}
+          aria-label="Gönder"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResolvedStamp({ resolvedByName }) {
+  return (
+    <div className="shrink-0 px-4 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-emerald-100 bg-gradient-to-b from-white via-emerald-50/30 to-emerald-50/70">
+      <div className="relative w-full min-h-[112px] py-7 px-5 rounded-3xl border-2 border-emerald-200/90 bg-emerald-50 flex flex-col items-center justify-center text-center overflow-hidden shadow-inner">
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
+          aria-hidden
+        >
+          <span className="text-[3.25rem] font-black uppercase tracking-[0.18em] text-emerald-600/10 rotate-[-14deg]">
+            Çözüldü
+          </span>
+        </div>
+        <div className="relative z-10 w-12 h-12 rounded-full bg-emerald-500 text-white flex items-center justify-center mb-2.5 shadow-lg shadow-emerald-500/30">
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <p className="relative z-10 text-lg font-black uppercase tracking-[0.12em] text-emerald-800">Çözüldü</p>
+        <p className="relative z-10 text-[11px] text-emerald-700/75 mt-1.5 max-w-[240px] leading-relaxed">
+          {resolvedByName ? `${resolvedByName} tarafından kapatıldı` : 'Bu konuşma sonlandırıldı'}
+        </p>
       </div>
     </div>
   );
@@ -119,8 +220,8 @@ function MessageBubble({ message, isOwn, accentSolid }) {
 
 function NewTicketView({ category, setCategory, text, setText, sending, onSubmit, accentSolid }) {
   return (
-    <div className="px-4 py-5 space-y-5">
-      <div>
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400 mb-3">Konu türü</p>
         <div className="grid grid-cols-2 gap-2">
           {SUPPORT_CATEGORIES.map((cat) => {
@@ -145,28 +246,14 @@ function NewTicketView({ category, setCategory, text, setText, sending, onSubmit
         </div>
       </div>
 
-      <label className="block">
-        <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Mesajınız</span>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Sorununuzu veya önerinizi detaylı yazın…"
-          rows={5}
-          maxLength={2000}
-          className="mt-2 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/25 focus:border-violet-300 focus:bg-white resize-none transition-colors"
-        />
-        <span className="text-[10px] text-slate-400 mt-1 block text-right">{text.length}/2000</span>
-      </label>
-
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!text.trim() || sending}
-        className="w-full py-3.5 rounded-2xl text-sm font-bold text-white disabled:opacity-45 active:scale-[0.99] transition-all shadow-lg shadow-violet-500/20"
-        style={{ background: `linear-gradient(135deg, ${accentSolid} 0%, ${accentSolid}cc 100%)` }}
-      >
-        {sending ? 'Gönderiliyor…' : 'Konuşmayı başlat'}
-      </button>
+      <ComposerBar
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onSend={onSubmit}
+        sending={sending}
+        placeholder="Sorununuzu veya önerinizi yazın…"
+        accentSolid={accentSolid}
+      />
     </div>
   );
 }
@@ -187,6 +274,7 @@ function ChatView({
   const isAdmin = isStaffAdmin(staff);
   const isResolved = ticket.status === SUPPORT_STATUS.RESOLVED;
   const canSend = !isResolved && (isAdmin || ticket.staffId === staff.id);
+  const staffProfileFallback = ticket.staffProfileImageSrc || null;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -194,18 +282,6 @@ function ChatView({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {isResolved && (
-        <div className="shrink-0 mx-4 mt-3 px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center gap-3">
-          <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-sm">✓</span>
-          <div>
-            <p className="text-sm font-semibold text-emerald-900">Çözüldü</p>
-            <p className="text-xs text-emerald-700/80 mt-0.5">
-              {ticket.resolvedByName ? `${ticket.resolvedByName} tarafından kapatıldı` : 'Konuşma sonlandırıldı'}
-            </p>
-          </div>
-        </div>
-      )}
-
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4">
         {messages.map((msg) => (
           <MessageBubble
@@ -213,55 +289,41 @@ function ChatView({
             message={msg}
             isOwn={msg.staffId === staff.id}
             accentSolid={accentSolid}
+            fallbackProfileSrc={
+              msg.staffId === staff.id
+                ? staff.profileImageSrc || staffProfileFallback
+                : staffProfileFallback
+            }
           />
         ))}
       </div>
 
       {canSend && (
-        <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-sm">
-          <div className="flex gap-2 items-end">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Mesajınızı yazın…"
-              rows={1}
-              maxLength={2000}
-              className="flex-1 min-h-[44px] max-h-28 px-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/25 focus:border-violet-300 focus:bg-white"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  onSend();
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={onSend}
-              disabled={!draft.trim() || sending}
-              className="shrink-0 w-11 h-11 rounded-2xl text-white flex items-center justify-center disabled:opacity-40 active:scale-95 transition-all"
-              style={{ background: accentSolid }}
-              aria-label="Gönder"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-              </svg>
-            </button>
-          </div>
-        </div>
+        <>
+          {isAdmin && (
+            <div className="shrink-0 px-4 pb-2">
+              <button
+                type="button"
+                onClick={onResolve}
+                disabled={resolving}
+                className="w-full py-2.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 active:scale-[0.99] transition-all disabled:opacity-50"
+              >
+                {resolving ? 'Kaydediliyor…' : 'Çözüldü olarak işaretle'}
+              </button>
+            </div>
+          )}
+          <ComposerBar
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onSend={onSend}
+            sending={sending}
+            placeholder="Mesajınızı yazın…"
+            accentSolid={accentSolid}
+          />
+        </>
       )}
 
-      {isAdmin && !isResolved && (
-        <div className="shrink-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={onResolve}
-            disabled={resolving}
-            className="w-full py-3 rounded-2xl text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 active:scale-[0.99] transition-all disabled:opacity-50"
-          >
-            {resolving ? 'Kaydediliyor…' : 'Çözüldü olarak işaretle'}
-          </button>
-        </div>
-      )}
+      {isResolved && <ResolvedStamp resolvedByName={ticket.resolvedByName} />}
     </div>
   );
 }
@@ -271,11 +333,11 @@ export function SupportFlagButton({ onClick, badgeCount = 0 }) {
     <button
       type="button"
       onClick={onClick}
-      className="relative shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 text-slate-600 flex items-center justify-center active:scale-[0.96] transition-transform"
+      className="relative shrink-0 w-10 h-10 rounded-2xl bg-white border border-slate-200/80 text-slate-500 flex items-center justify-center active:scale-[0.96] transition-transform shadow-sm"
       aria-label="Destek ve geri bildirim"
       title="Destek"
     >
-      <FlagIcon />
+      <FlagIcon className="w-[18px] h-[18px]" />
       {badgeCount > 0 && (
         <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-violet-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-white">
           {badgeCount > 9 ? '9+' : badgeCount}
@@ -307,8 +369,9 @@ export function SupportPanel({ open, onClose }) {
   useEffect(() => {
     if (!open || !staff?.id) return undefined;
 
-    setView('list');
+    setView(isAdmin ? 'list' : 'new');
     setSelectedTicket(null);
+    setNewText('');
     setError('');
 
     const unsub = isAdmin
@@ -341,9 +404,19 @@ export function SupportPanel({ open, onClose }) {
   }, [tickets, isAdmin, adminTab]);
 
   const handleBack = () => {
-    if (view === 'chat' || view === 'new') {
-      setView('list');
+    if (view === 'chat') {
+      setView(isAdmin ? 'list' : tickets.length > 0 ? 'list' : 'new');
       setSelectedTicket(null);
+      setError('');
+      return true;
+    }
+    if (view === 'list' && !isAdmin) {
+      setView('new');
+      setError('');
+      return true;
+    }
+    if (view === 'new' && !isAdmin && tickets.length > 0) {
+      setView('list');
       setError('');
       return true;
     }
@@ -417,12 +490,12 @@ export function SupportPanel({ open, onClose }) {
 
   const headerTitle =
     view === 'new'
-      ? 'Yeni bildirim'
+      ? 'Sorun Bildir'
       : view === 'chat' && selectedTicket
         ? supportCategoryLabel(selectedTicket.category)
         : isAdmin
           ? 'Destek merkezi'
-          : 'Geri bildirim';
+          : 'Geçmiş konuşmalar';
 
   const headerSubtitle =
     view === 'chat' && selectedTicket && isAdmin
@@ -460,6 +533,16 @@ export function SupportPanel({ open, onClose }) {
               )}
             </div>
           </div>
+
+          {view === 'new' && !isAdmin && tickets.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setView('list'); setError(''); }}
+              className="shrink-0 text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 active:scale-95 transition-transform"
+            >
+              Geçmiş
+            </button>
+          )}
 
           {view === 'list' && !isAdmin && (
             <button
@@ -507,25 +590,17 @@ export function SupportPanel({ open, onClose }) {
           <div className="flex-1 overflow-y-auto overscroll-contain bg-white mt-2 mx-3 mb-3 rounded-2xl border border-slate-100 shadow-sm">
             {filteredTickets.length === 0 ? (
               <div className="px-6 py-16 text-center">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-violet-50 flex items-center justify-center text-2xl mb-4">🚩</div>
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-violet-50 border border-violet-100 flex items-center justify-center text-violet-500 mb-4">
+                  <FlagIcon className="w-6 h-6" />
+                </div>
                 <p className="text-sm font-semibold text-slate-900">
                   {isAdmin ? 'Henüz bildirim yok' : 'Geçmiş konuşma yok'}
                 </p>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed max-w-xs mx-auto">
                   {isAdmin
                     ? 'Personel sorun veya öneri bildirdiğinde burada görünür.'
-                    : 'Sorun, şikayet, istek veya önerinizi paylaşmak için yeni konuşma başlatın.'}
+                    : 'Yeni bir konu başlatmak için geri dönün ve mesajınızı yazın.'}
                 </p>
-                {!isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setView('new')}
-                    className="mt-6 text-sm font-bold px-5 py-2.5 rounded-xl text-white active:scale-95"
-                    style={{ background: accentSolid }}
-                  >
-                    Konuşma başlat
-                  </button>
-                )}
               </div>
             ) : (
               filteredTickets.map((ticket) => (
@@ -541,7 +616,7 @@ export function SupportPanel({ open, onClose }) {
         )}
 
         {view === 'new' && (
-          <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <NewTicketView
               category={newCategory}
               setCategory={setNewCategory}
