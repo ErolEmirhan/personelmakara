@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   try {
     const messaging = getMessagingForBranch(branchKey);
 
-    const notificationTitle = title || 'MAKARA';
+    const notificationTitle = title || 'MAKARA · Ekip bildirimi';
     const notificationBody = message.length > 180 ? `${message.slice(0, 177)}…` : message;
 
     const host = req.headers['x-forwarded-host'] || req.headers.host || '';

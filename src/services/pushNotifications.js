@@ -6,6 +6,7 @@ import {
   pruneInvalidPushTokens,
   saveStaffPushToken,
 } from './firebaseService';
+import { formatPushNotificationDisplay } from '../utils/pushDisplayFormat';
 
 const VAPID_BY_BRANCH = {
   makara: import.meta.env.VITE_FCM_VAPID_KEY_MAKARA,
@@ -261,50 +262,50 @@ function attachForegroundMessageHandler(messaging) {
   foregroundHandlerAttached = true;
 
   onMessage(messaging, (payload) => {
-    const title = payload.notification?.title || payload.data?.title || 'MAKARA';
-    const body = payload.notification?.body || payload.data?.body || '';
+    const customTitle = payload.notification?.title || payload.data?.title || 'MAKARA';
+    const message = payload.notification?.body || payload.data?.body || '';
     const data = payload.data || {};
 
     window.dispatchEvent(
       new CustomEvent('makara-push-message', {
-        detail: { title, body, data },
+        detail: { title: customTitle, body: message, data },
       })
     );
 
     if (document.visibilityState !== 'visible') {
-      showLocalNotification(title, body, data);
+      showLocalNotification(customTitle, message, data);
     }
   });
 }
 
-function showLocalNotification(title, body, data = {}) {
+function showLocalNotification(customTitle, message, data = {}) {
   if (typeof window === 'undefined' || Notification.permission !== 'granted') return;
 
+  const { title, body } = formatPushNotificationDisplay(customTitle, message);
   const base = import.meta.env.BASE_URL || '/';
   const icon = new URL('icons/icon-192.png', `${window.location.origin}${base}`).href;
   const tag = data?.announcementId
     ? `makara-announcement-${data.announcementId}`
     : 'makara-staff-announcement';
-  const displayBody = body && body !== title ? body : (body || title);
 
   try {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready
         .then((registration) => {
           registration.showNotification(title, {
-            body: displayBody,
+            body,
             icon,
             badge: icon,
             tag,
-            data,
+            data: { ...data, title: customTitle, body: message },
           });
         })
         .catch(() => {
-          new Notification(title, { body: displayBody, icon, tag, data });
+          new Notification(title, { body, icon, tag, data });
         });
       return;
     }
-    new Notification(title, { body: displayBody, icon, tag, data });
+    new Notification(title, { body, icon, tag, data });
   } catch {
     /* iOS PWA ön planda sistem bildirimi engelleyebilir */
   }

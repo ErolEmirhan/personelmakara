@@ -24,32 +24,46 @@ firebase.initializeApp({
 
 function parsePushPayload(payload) {
   const data = payload?.data || {};
-  const title = payload?.notification?.title || data.title || 'MAKARA';
-  const body = payload?.notification?.body || data.body || '';
-  return { title, body, data };
+  const customTitle =
+    payload?.notification?.title ||
+    data.title ||
+    'MAKARA · Ekip bildirimi';
+  const message =
+    payload?.notification?.body ||
+    data.body ||
+    '';
+  return { customTitle, message, data };
 }
 
-function showPushNotification(title, body, data) {
+function formatPushDisplay(customTitle, message) {
+  const headline = (customTitle || '').trim();
+  const text = (message || '').trim();
+  const hasHeadline = headline && headline !== 'MAKARA · Ekip bildirimi';
+
+  return {
+    title: 'MAKARA',
+    body: hasHeadline ? `${headline}\n${text}` : text,
+  };
+}
+
+function showPushNotification(customTitle, message, data) {
+  const { title, body } = formatPushDisplay(customTitle, message);
   const icon = new URL('icons/icon-192.png', self.location.origin).href;
   const tag = data?.announcementId
     ? `makara-announcement-${data.announcementId}`
     : 'makara-staff-announcement';
-
-  // Başlık zaten gövdede tekrarlanmasın (yönetici başlık + mesaj gönderince)
-  const displayBody = body && body !== title ? body : (body || title);
-
   return self.registration.showNotification(title, {
-    body: displayBody,
+    body,
     icon,
     badge: icon,
     tag,
-    data,
+    data: { ...data, title: customTitle, body: message },
   });
 }
 
 firebase.messaging().onBackgroundMessage((payload) => {
-  const { title, body, data } = parsePushPayload(payload);
-  return showPushNotification(title, body, data);
+  const { customTitle, message, data } = parsePushPayload(payload);
+  return showPushNotification(customTitle, message, data);
 });
 
 self.addEventListener('notificationclick', (event) => {
