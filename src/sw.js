@@ -41,7 +41,7 @@ function formatPushDisplay(customTitle, message) {
   const hasHeadline = headline && headline !== 'MAKARA · Ekip bildirimi';
 
   return {
-    title: 'MAKARA',
+    title: '\u200B',
     body: hasHeadline ? `${headline}\n${text}` : text,
   };
 }

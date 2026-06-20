@@ -7,9 +7,9 @@ export function formatPushNotificationDisplay(customTitle, message) {
   const text = (message || '').trim();
   const hasHeadline = headline && headline !== DEFAULT_HEADLINE;
 
-  // title alanı OS'te "from …" satırının üstüne çıkıyor; özel başlık body'de.
+  // title boş bırakılamaz; görünmez karakter — üstte ekstra "MAKARA" satırı çıkmasın.
   return {
-    title: 'MAKARA',
+    title: '\u200B',
     body: hasHeadline ? `${headline}\n${text}` : text,
   };
 }
