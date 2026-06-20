@@ -265,13 +265,15 @@ function attachForegroundMessageHandler(messaging) {
     const body = payload.notification?.body || payload.data?.body || '';
     const data = payload.data || {};
 
-    showLocalNotification(title, body, data);
-
     window.dispatchEvent(
       new CustomEvent('makara-push-message', {
         detail: { title, body, data },
       })
     );
+
+    if (document.visibilityState !== 'visible') {
+      showLocalNotification(title, body, data);
+    }
   });
 }
 
@@ -280,6 +282,9 @@ function showLocalNotification(title, body, data = {}) {
 
   const base = import.meta.env.BASE_URL || '/';
   const icon = new URL('icons/icon-192.png', `${window.location.origin}${base}`).href;
+  const tag = data?.announcementId
+    ? `makara-announcement-${data.announcementId}`
+    : 'makara-staff-announcement';
 
   try {
     if ('serviceWorker' in navigator) {
@@ -289,16 +294,16 @@ function showLocalNotification(title, body, data = {}) {
             body,
             icon,
             badge: icon,
-            tag: 'makara-staff-announcement',
+            tag,
             data,
           });
         })
         .catch(() => {
-          new Notification(title, { body, icon, tag: 'makara-staff-announcement', data });
+          new Notification(title, { body, icon, tag, data });
         });
       return;
     }
-    new Notification(title, { body, icon, tag: 'makara-staff-announcement', data });
+    new Notification(title, { body, icon, tag, data });
   } catch {
     /* iOS PWA ön planda sistem bildirimi engelleyebilir */
   }
@@ -339,24 +344,6 @@ export async function fetchPushRegistrationStatus(branchKey, staffId) {
   }
 
   return status;
-}
-
-export async function sendSelfTestPush(branchKey, staffId) {
-  const token = getStoredPushToken(staffId);
-  if (!token) {
-    throw new Error('Bu cihazda kayıtlı token yok — önce Cihazı kaydet');
-  }
-
-  const res = await fetch(apiUrl('api/push-self-test'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchKey, token }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || 'Test push gönderilemedi');
-  }
-  return data;
 }
 
 export async function sendAnnouncementPush({ branchKey, staffId, title, message, announcementId }) {

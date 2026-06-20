@@ -55,7 +55,6 @@ export default async function handler(req, res) {
     const protocol = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
     const origin = host ? `${protocol}://${host}` : '';
 
-    const iconUrl = origin ? `${origin}/icons/icon-192.png` : '/icons/icon-192.png';
     const openUrl = origin ? `${origin}/?tab=notifications` : '/?tab=notifications';
 
     let sent = 0;
@@ -81,11 +80,6 @@ export default async function handler(req, res) {
           },
           fcmOptions: {
             link: openUrl,
-          },
-          notification: {
-            title: notificationTitle,
-            body: notificationBody,
-            icon: iconUrl,
           },
         },
       });

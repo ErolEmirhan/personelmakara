@@ -36,13 +36,15 @@ function parsePushPayload(payload) {
 
 function showPushNotification(title, body, data) {
   const icon = new URL('icons/icon-192.png', self.location.origin).href;
+  const tag = data?.announcementId
+    ? `makara-announcement-${data.announcementId}`
+    : 'makara-staff-announcement';
   return self.registration.showNotification(title, {
     body,
     icon,
     badge: icon,
-    tag: 'makara-staff-announcement',
+    tag,
     data,
-    renotify: true,
   });
 }
 

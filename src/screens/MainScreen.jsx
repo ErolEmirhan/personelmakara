@@ -80,7 +80,6 @@ export function MainScreen() {
         title: detail.title || 'Bildirim',
         body: detail.body || '',
       });
-      setMainTab(MAIN_TABS.NOTIFICATIONS);
     };
     window.addEventListener('makara-push-message', onPushMessage);
 
