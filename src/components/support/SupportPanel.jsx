@@ -697,27 +697,6 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
           </div>
 
           <div className="relative z-10 flex items-center gap-2 shrink-0">
-            {view === 'new' && !isAdmin && tickets.length > 0 && (
-              <button
-                type="button"
-                onClick={() => { setView('list'); setError(''); }}
-                className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 active:scale-95 transition-transform"
-              >
-                Geçmiş
-              </button>
-            )}
-
-            {view === 'list' && !isAdmin && (
-              <button
-                type="button"
-                onClick={() => { setView('new'); setError(''); }}
-                className="text-xs font-bold px-3 py-2 rounded-xl text-white active:scale-95 transition-transform"
-                style={{ background: accentSolid }}
-              >
-                Yeni
-              </button>
-            )}
-
             <button
               type="button"
               onClick={handleClose}
@@ -759,6 +738,39 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
         </div>
       )}
 
+      {!isAdmin && (view === 'list' || view === 'new') && (
+        <div className="shrink-0 px-4 pt-3 pb-1">
+          <div className="flex gap-2">
+            {tickets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setView('list'); setError(''); }}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98] ${
+                  view === 'list'
+                    ? 'text-white shadow-sm'
+                    : 'bg-white border border-slate-200 text-slate-600'
+                }`}
+                style={view === 'list' ? { background: accentSolid } : undefined}
+              >
+                Geçmiş
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setView('new'); setError(''); }}
+              className={`${tickets.length > 0 ? 'flex-1' : 'w-full'} py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98] ${
+                view === 'new'
+                  ? 'text-white shadow-sm'
+                  : 'bg-white border border-slate-200 text-slate-600'
+              }`}
+              style={view === 'new' ? { background: accentSolid } : undefined}
+            >
+              Yeni
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {view === 'list' && (
           <div className="flex-1 overflow-y-auto overscroll-contain bg-white mt-2 mx-3 mb-3 rounded-2xl border border-slate-100 shadow-sm">
@@ -773,7 +785,7 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed max-w-xs mx-auto">
                   {isAdmin
                     ? 'Personel sorun veya öneri bildirdiğinde burada görünür.'
-                    : 'Yeni bir konu başlatmak için geri dönün ve mesajınızı yazın.'}
+                    : 'Yeni sekmesinden bir konu başlatabilirsiniz.'}
                 </p>
               </div>
             ) : (
