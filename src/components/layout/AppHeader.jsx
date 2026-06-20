@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { MAIN_TABS } from '../../constants/nav';
 import { StaffTeamModal } from '../modals/StaffTeamModal';
 import { StaffAvatar } from '../ui/StaffAvatar';
+import { SupportFlagButton, SupportPanel, useSupportBadgeCount } from '../support/SupportPanel';
 
 const TAB_TITLES = {
   [MAIN_TABS.ORDERS]: 'Siparişler',
@@ -102,6 +103,8 @@ export function AppHeader() {
   const { theme, branchKey } = useBranch();
   const { setDrawerOpen, screen, selectedTable, mainTab } = useApp();
   const [teamOpen, setTeamOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const supportBadgeCount = useSupportBadgeCount(branchKey, staff);
 
   const isOrder = screen === 'order' && selectedTable;
   const isHome = !isOrder && mainTab === MAIN_TABS.TABLES;
@@ -139,6 +142,11 @@ export function AppHeader() {
               staff={staff}
             />
 
+            <SupportFlagButton
+              onClick={() => setSupportOpen(true)}
+              badgeCount={supportBadgeCount}
+            />
+
             <button
               type="button"
               onClick={() => setTeamOpen(true)}
@@ -167,6 +175,8 @@ export function AppHeader() {
           </div>
         </div>
       </header>
+
+      <SupportPanel open={supportOpen} onClose={() => setSupportOpen(false)} />
 
       <StaffTeamModal
         open={teamOpen}

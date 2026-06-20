@@ -997,4 +997,187 @@ export async function pruneInvalidPushTokens(branchKey, invalidTokens) {
   if (writes > 0) await batch.commit();
 }
 
+// ── Destek / geri bildirim (personel ↔ admin) ────────────────────────────────
+
+const STAFF_SUPPORT_TICKETS = 'staff_support_tickets';
+
+function mapSupportTicket(docSnap) {
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    branchKey: data.branchKey,
+    staffId: data.staffId,
+    staffName: data.staffName || '',
+    staffSurname: data.staffSurname || '',
+    category: data.category || 'issue',
+    status: data.status || 'open',
+    lastMessage: data.lastMessage || '',
+    lastMessageAtMs: timestampToMs(data.lastMessageAt || data.updatedAt),
+    createdAtMs: timestampToMs(data.createdAt),
+    resolvedAtMs: timestampToMs(data.resolvedAt),
+    resolvedByName: data.resolvedByName || '',
+    needsAdminReply: !!data.needsAdminReply,
+  };
+}
+
+function mapSupportMessage(docSnap) {
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    staffId: data.staffId,
+    staffName: data.staffName || '',
+    staffSurname: data.staffSurname || '',
+    isAdmin: !!data.isAdmin,
+    text: data.text || '',
+    createdAtMs: timestampToMs(data.createdAt),
+  };
+}
+
+export async function createSupportTicket(branchKey, staff, { category, text }) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) throw new Error('Mesaj gerekli');
+
+  const db = requireMainDb();
+  const ticketRef = await addDoc(collection(db, STAFF_SUPPORT_TICKETS), {
+    branchKey,
+    staffId: staff.id,
+    staffName: staff.name || '',
+    staffSurname: staff.surname || '',
+    category: category || 'issue',
+    status: 'open',
+    lastMessage: trimmed.slice(0, 200),
+    lastMessageAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    needsAdminReply: true,
+  });
+
+  await addDoc(collection(db, STAFF_SUPPORT_TICKETS, ticketRef.id, 'messages'), {
+    staffId: staff.id,
+    staffName: staff.name || '',
+    staffSurname: staff.surname || '',
+    isAdmin: !!staff.is_admin,
+    text: trimmed,
+    createdAt: serverTimestamp(),
+  });
+
+  return ticketRef.id;
+}
+
+export function subscribeStaffSupportTickets(staffId, onUpdate) {
+  if (!isFirebaseReady() || staffId == null) return () => {};
+  const db = requireMainDb();
+  const q = query(
+    collection(db, STAFF_SUPPORT_TICKETS),
+    where('staffId', '==', staffId)
+  );
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map(mapSupportTicket);
+      list.sort((a, b) => (b.lastMessageAtMs || 0) - (a.lastMessageAtMs || 0));
+      onUpdate(list);
+    },
+    (err) => {
+      console.error('support tickets snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export function subscribeBranchSupportTickets(branchKey, onUpdate) {
+  if (!isFirebaseReady() || !branchKey) return () => {};
+  const db = requireMainDb();
+  const q = query(
+    collection(db, STAFF_SUPPORT_TICKETS),
+    where('branchKey', '==', branchKey)
+  );
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map(mapSupportTicket);
+      list.sort((a, b) => (b.lastMessageAtMs || 0) - (a.lastMessageAtMs || 0));
+      onUpdate(list);
+    },
+    (err) => {
+      console.error('branch support tickets snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export function subscribeSupportMessages(ticketId, onUpdate) {
+  if (!isFirebaseReady() || !ticketId) return () => {};
+  const db = requireMainDb();
+  const q = query(
+    collection(db, STAFF_SUPPORT_TICKETS, ticketId, 'messages'),
+    orderBy('createdAt', 'asc')
+  );
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      onUpdate(snap.docs.map(mapSupportMessage));
+    },
+    (err) => {
+      console.error('support messages snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export async function sendSupportMessage(ticketId, staff, text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) throw new Error('Mesaj gerekli');
+
+  const db = requireMainDb();
+  const ticketRef = doc(db, STAFF_SUPPORT_TICKETS, ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) throw new Error('Konuşma bulunamadı');
+
+  const ticket = ticketSnap.data();
+  if (ticket.status === 'resolved') throw new Error('Bu konuşma kapatılmış');
+
+  const isAdmin = !!staff.is_admin;
+
+  if (!isAdmin && ticket.staffId !== staff.id) {
+    throw new Error('Bu konuşmaya erişim yok');
+  }
+
+  await addDoc(collection(db, STAFF_SUPPORT_TICKETS, ticketId, 'messages'), {
+    staffId: staff.id,
+    staffName: staff.name || '',
+    staffSurname: staff.surname || '',
+    isAdmin,
+    text: trimmed,
+    createdAt: serverTimestamp(),
+  });
+
+  await updateDoc(ticketRef, {
+    lastMessage: trimmed.slice(0, 200),
+    lastMessageAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    needsAdminReply: !isAdmin,
+  });
+}
+
+export async function resolveSupportTicket(ticketId, adminStaff) {
+  if (!adminStaff?.is_admin) throw new Error('Yetki gerekli');
+
+  const db = requireMainDb();
+  const ticketRef = doc(db, STAFF_SUPPORT_TICKETS, ticketId);
+  const ticketSnap = await getDoc(ticketRef);
+  if (!ticketSnap.exists()) throw new Error('Konuşma bulunamadı');
+
+  await updateDoc(ticketRef, {
+    status: 'resolved',
+    resolvedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    resolvedByName: `${adminStaff.name || ''} ${adminStaff.surname || ''}`.trim(),
+    needsAdminReply: false,
+  });
+}
+
 export { YAN_URUNLER_CATEGORY_ID, getBranchTheme };
