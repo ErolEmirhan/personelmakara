@@ -19,6 +19,7 @@ import {
   saveNotificationPrefs,
 } from '../utils/notificationPrefs';
 import {
+  ensureForegroundPushHandler,
   fetchPushRegistrationStatus,
   getPushPermissionState,
   isPushConfiguredForBranch,
@@ -27,7 +28,6 @@ import {
   pushRegistrationErrorMessage,
   registerStaffPushNotifications,
   sendSelfTestPush,
-  syncStaffPushToken,
 } from '../services/pushNotifications';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
 
@@ -132,27 +132,10 @@ export function SettingsScreen() {
     if (!staff?.id || !pushAvailable) return;
     setPushRegistered(isPushRegisteredLocally(staff.id));
 
-    if (Notification.permission !== 'granted') return;
-
-    syncStaffPushToken(branchKey, staff.id).then(async (result) => {
-      if (result.ok) {
-        setPushRegistered(true);
-        try {
-          const status = await fetchPushRegistrationStatus(branchKey, staff.id);
-          if (status.staffRegistered) {
-            setPushStatusNote('Bu cihaz sunucuda kayıtlı — push bildirimleri aktif.');
-          } else {
-            setPushRegistered(false);
-            setPushStatusNote('Cihaz kaydı sunucuya ulaşmadı. «Cihazı kaydet» ile tekrar deneyin.');
-          }
-        } catch (err) {
-          setPushStatusNote(err.message || 'Sunucu kaydı doğrulanamadı');
-        }
-      } else if (result.reason !== 'not_granted') {
-        setPushStatusNote(pushRegistrationErrorMessage(result.reason, result.error));
-      }
-    });
-  }, [staff?.id, branchKey, pushAvailable]);
+    if (Notification.permission === 'granted') {
+      ensureForegroundPushHandler();
+    }
+  }, [staff?.id, pushAvailable]);
 
   const profileDirty = useMemo(() => {
     if (!staff) return false;
@@ -277,21 +260,27 @@ export function SettingsScreen() {
         setPushStatusNote('Bu cihaz push bildirimini desteklemiyor.');
         return;
       }
-      const result = await registerStaffPushNotifications(branchKey, staff.id);
+      const result = await registerStaffPushNotifications(branchKey, staff.id, { forceSync: true });
       const permission = await getPushPermissionState();
       setPushPermission(permission);
       if (result.ok) {
         setPushRegistered(true);
-        try {
-          const status = await fetchPushRegistrationStatus(branchKey, staff.id);
-          if (status.staffRegistered) {
-            setPushStatusNote('Bu cihaz sunucuda kayıtlı — push bildirimleri aktif.');
-          } else {
-            setPushRegistered(false);
-            setPushStatusNote('Kayıt başarısız — sunucuya token yazılamadı.');
+        if (result.quotaBlocked) {
+          setPushStatusNote('Cihaz daha önce kaydedildi. Firebase kotası dolu — birkaç saat sonra tekrar deneyin.');
+        } else if (result.reason === 'already_synced') {
+          setPushStatusNote('Bu cihaz zaten kayıtlı — push bildirimleri aktif.');
+        } else {
+          try {
+            const status = await fetchPushRegistrationStatus(branchKey, staff.id);
+            if (status.staffRegistered) {
+              setPushStatusNote('Bu cihaz sunucuda kayıtlı — push bildirimleri aktif.');
+            } else {
+              setPushRegistered(false);
+              setPushStatusNote('Kayıt başarısız — sunucuya token yazılamadı.');
+            }
+          } catch (err) {
+            setPushStatusNote(err.message || 'Sunucu kaydı doğrulanamadı');
           }
-        } catch (err) {
-          setPushStatusNote(err.message || 'Sunucu kaydı doğrulanamadı');
         }
         showToast('success', 'Aktif', 'Ana ekran bildirimleri açıldı');
       } else {

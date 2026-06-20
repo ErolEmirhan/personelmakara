@@ -1,4 +1,5 @@
 import { getAdminForBranch } from './_lib/firebaseAdmin.js';
+import { firestoreErrorResponse } from './_lib/firestoreErrors.js';
 
 const STAFF_PUSH_TOKENS = 'staff_push_tokens';
 
@@ -79,6 +80,7 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('push-self-test error:', err);
-    return json(res, 500, { error: err.message || 'Test push gönderilemedi' });
+    const { status, body: errorBody } = firestoreErrorResponse(err);
+    return json(res, status, errorBody);
   }
 }

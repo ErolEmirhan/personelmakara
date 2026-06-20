@@ -1,4 +1,5 @@
 import { getAdminForBranch, canSendAnnouncements } from './_lib/firebaseAdmin.js';
+import { firestoreErrorResponse } from './_lib/firestoreErrors.js';
 
 const STAFF_PUSH_TOKENS = 'staff_push_tokens';
 const STAFF_COLLECTION = 'staff';
@@ -12,34 +13,47 @@ function json(res, status, body) {
 async function collectBranchTokens(db, branchKey, excludeStaffId) {
   const snap = await db.collection(STAFF_PUSH_TOKENS).where('branchKey', '==', branchKey).get();
   const tokens = new Set();
+  const tokenDocIds = new Map();
 
   snap.forEach((docSnap) => {
     if (excludeStaffId && docSnap.id === String(excludeStaffId)) return;
     const data = docSnap.data() || {};
     for (const token of data.tokens || []) {
-      if (typeof token === 'string' && token.length > 20) tokens.add(token);
+      if (typeof token === 'string' && token.length > 20) {
+        tokens.add(token);
+        tokenDocIds.set(token, docSnap.id);
+      }
     }
   });
 
-  return [...tokens];
+  return { tokens: [...tokens], tokenDocIds };
 }
 
-async function removeInvalidTokens(db, tokensToRemove) {
+async function removeInvalidTokens(db, tokensToRemove, tokenDocIds) {
   if (!tokensToRemove.length) return;
 
-  const snap = await db.collection(STAFF_PUSH_TOKENS).get();
+  const docIds = new Set(
+    tokensToRemove.map((token) => tokenDocIds.get(token)).filter(Boolean)
+  );
+
+  if (docIds.size === 0) return;
+
   const batch = db.batch();
   let writes = 0;
 
-  snap.forEach((docSnap) => {
+  for (const docId of docIds) {
+    const ref = db.collection(STAFF_PUSH_TOKENS).doc(docId);
+    const docSnap = await ref.get();
+    if (!docSnap.exists) continue;
+
     const data = docSnap.data() || {};
     const current = data.tokens || [];
     const next = current.filter((t) => !tokensToRemove.includes(t));
     if (next.length !== current.length) {
-      batch.set(docSnap.ref, { ...data, tokens: next, updatedAt: new Date() }, { merge: true });
+      batch.set(ref, { ...data, tokens: next, updatedAt: new Date() }, { merge: true });
       writes += 1;
     }
-  });
+  }
 
   if (writes > 0) await batch.commit();
 }
@@ -89,7 +103,7 @@ export default async function handler(req, res) {
       return json(res, 403, { error: 'Bildirim gönderme yetkisi yok' });
     }
 
-    const tokens = await collectBranchTokens(db, branchKey, null);
+    const { tokens, tokenDocIds } = await collectBranchTokens(db, branchKey, null);
     if (tokens.length === 0) {
       return json(res, 200, { success: true, sent: 0, message: 'Kayıtlı cihaz yok' });
     }
@@ -154,7 +168,7 @@ export default async function handler(req, res) {
       });
     }
 
-    await removeInvalidTokens(db, invalidTokens);
+    await removeInvalidTokens(db, invalidTokens, tokenDocIds);
 
     return json(res, 200, {
       success: true,
@@ -166,6 +180,7 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('push-announcement error:', err);
-    return json(res, 500, { error: err.message || 'Push gönderilemedi' });
+    const { status, body: errorBody } = firestoreErrorResponse(err);
+    return json(res, status, errorBody);
   }
 }

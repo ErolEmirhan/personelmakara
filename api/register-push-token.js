@@ -1,4 +1,5 @@
 import { getAdminForBranch } from './_lib/firebaseAdmin.js';
+import { firestoreErrorResponse } from './_lib/firestoreErrors.js';
 
 const STAFF_PUSH_TOKENS = 'staff_push_tokens';
 const STAFF_COLLECTION = 'staff';
@@ -33,20 +34,30 @@ export default async function handler(req, res) {
 
   try {
     const { db } = getAdminForBranch(branchKey);
-
-    const staffSnap = await db.collection(STAFF_COLLECTION).doc(String(staffId)).get();
-    if (!staffSnap.exists) {
-      return json(res, 403, { error: 'Personel bulunamadı' });
-    }
-
-    const staff = staffSnap.data();
-    if (staff.branchKey && staff.branchKey !== branchKey) {
-      return json(res, 403, { error: 'Şube uyuşmuyor' });
-    }
-
     const ref = db.collection(STAFF_PUSH_TOKENS).doc(String(staffId));
     const snap = await ref.get();
     const existing = snap.exists ? (snap.data().tokens || []) : [];
+
+    if (existing.includes(token)) {
+      return json(res, 200, {
+        success: true,
+        tokenCount: existing.length,
+        unchanged: true,
+      });
+    }
+
+    if (!snap.exists) {
+      const staffSnap = await db.collection(STAFF_COLLECTION).doc(String(staffId)).get();
+      if (!staffSnap.exists) {
+        return json(res, 403, { error: 'Personel bulunamadı' });
+      }
+
+      const staff = staffSnap.data();
+      if (staff.branchKey && staff.branchKey !== branchKey) {
+        return json(res, 403, { error: 'Şube uyuşmuyor' });
+      }
+    }
+
     const merged = [...new Set([...existing, token])].slice(-MAX_TOKENS);
 
     await ref.set(
@@ -65,6 +76,7 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('register-push-token error:', err);
-    return json(res, 500, { error: err.message || 'Token kaydedilemedi' });
+    const { status, body: errorBody } = firestoreErrorResponse(err);
+    return json(res, status, errorBody);
   }
 }

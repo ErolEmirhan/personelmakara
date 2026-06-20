@@ -6,7 +6,10 @@ const VAPID_BY_BRANCH = {
 };
 
 const PUSH_REGISTERED_KEY = 'makara_push_registered';
+const PUSH_TOKEN_KEY = 'makara_push_fcm_token';
 const PUSH_ENTRY_PROMPT_KEY = 'makara_push_entry_prompted';
+const PUSH_STATUS_CHECK_KEY = 'makara_push_status_checked_at';
+const PUSH_STATUS_CHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 let foregroundHandlerAttached = false;
 
@@ -28,12 +31,53 @@ export function isPushRegisteredLocally(staffId) {
   }
 }
 
-function markPushRegistered(staffId) {
+function markPushRegistered(staffId, token) {
   try {
     localStorage.setItem(PUSH_REGISTERED_KEY, String(staffId));
+    if (token) {
+      localStorage.setItem(PUSH_TOKEN_KEY, JSON.stringify({ staffId: String(staffId), token }));
+    }
   } catch {
     /* ignore */
   }
+}
+
+function getStoredPushToken(staffId) {
+  if (!staffId) return null;
+  try {
+    const raw = localStorage.getItem(PUSH_TOKEN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.staffId !== String(staffId)) return null;
+    return parsed.token || null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPushRegistration(staffId) {
+  try {
+    if (localStorage.getItem(PUSH_REGISTERED_KEY) === String(staffId)) {
+      localStorage.removeItem(PUSH_REGISTERED_KEY);
+    }
+    const raw = localStorage.getItem(PUSH_TOKEN_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.staffId === String(staffId)) {
+        localStorage.removeItem(PUSH_TOKEN_KEY);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function isQuotaError(err) {
+  const message = err?.message || String(err || '');
+  return message.includes('RESOURCE_EXHAUSTED')
+    || message.includes('Quota exceeded')
+    || message.includes('firestore_quota_exceeded')
+    || message.includes('günlük kotası');
 }
 
 export async function isPushSupported() {
@@ -122,7 +166,12 @@ export function pushRegistrationErrorMessage(reason, err) {
       return 'FCM token alınamadı — uygulamayı kapatıp ana ekrandan tekrar açın.';
     case 'not_granted':
       return 'Bildirim izni verilmemiş.';
+    case 'already_synced':
+      return '';
     default:
+      if (isQuotaError(err)) {
+        return 'Firebase günlük kotası doldu. Birkaç saat sonra tekrar deneyin veya Firebase planını yükseltin.';
+      }
       return err?.message || 'Push kaydı yapılamadı';
   }
 }
@@ -132,7 +181,7 @@ export async function getPushPermissionState() {
   return Notification.permission;
 }
 
-export async function registerStaffPushNotifications(branchKey, staffId) {
+export async function registerStaffPushNotifications(branchKey, staffId, { forceSync = false } = {}) {
   if (!staffId || !isPushConfiguredForBranch(branchKey)) {
     return { ok: false, reason: 'unsupported_branch' };
   }
@@ -166,13 +215,27 @@ export async function registerStaffPushNotifications(branchKey, staffId) {
       return { ok: false, reason: 'no_token' };
     }
 
+    const storedToken = getStoredPushToken(staffId);
+    const alreadySynced = isPushRegisteredLocally(staffId) && storedToken === token;
+
+    if (alreadySynced && !forceSync) {
+      attachForegroundMessageHandler(messaging);
+      return { ok: true, permission, token, reason: 'already_synced' };
+    }
+
     await persistPushToken(branchKey, staffId, token);
-    markPushRegistered(staffId);
+    markPushRegistered(staffId, token);
     attachForegroundMessageHandler(messaging);
 
     return { ok: true, permission, token };
   } catch (err) {
     console.error('registerStaffPushNotifications:', err);
+    if (isQuotaError(err)) {
+      if (isPushRegisteredLocally(staffId) && getStoredPushToken(staffId)) {
+        ensureForegroundPushHandler();
+        return { ok: true, reason: 'already_synced', quotaBlocked: true };
+      }
+    }
     return { ok: false, reason: 'error', error: err };
   }
 }
@@ -181,6 +244,12 @@ export async function syncStaffPushToken(branchKey, staffId) {
   if ((await getPushPermissionState()) !== 'granted') {
     return { ok: false, reason: 'not_granted' };
   }
+
+  if (isPushRegisteredLocally(staffId) && getStoredPushToken(staffId)) {
+    ensureForegroundPushHandler();
+    return { ok: true, reason: 'already_synced' };
+  }
+
   return registerStaffPushNotifications(branchKey, staffId);
 }
 
@@ -202,10 +271,10 @@ export async function requestPushOnAppEntry(branchKey, staffId) {
 
   if (permission === 'granted') {
     ensureForegroundPushHandler();
-    if (!isPushRegisteredLocally(staffId)) {
-      return registerStaffPushNotifications(branchKey, staffId);
+    if (isPushRegisteredLocally(staffId) && getStoredPushToken(staffId)) {
+      return { ok: true, reason: 'already_synced', permission };
     }
-    return syncStaffPushToken(branchKey, staffId);
+    return registerStaffPushNotifications(branchKey, staffId);
   }
 
   try {
@@ -279,6 +348,15 @@ export function ensureForegroundPushHandler() {
 }
 
 export async function fetchPushRegistrationStatus(branchKey, staffId) {
+  try {
+    const lastCheck = Number(sessionStorage.getItem(PUSH_STATUS_CHECK_KEY) || 0);
+    if (Date.now() - lastCheck < PUSH_STATUS_CHECK_COOLDOWN_MS && isPushRegisteredLocally(staffId)) {
+      return { staffRegistered: true, cached: true };
+    }
+  } catch {
+    /* ignore */
+  }
+
   const res = await fetch(apiUrl('api/push-status'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -288,6 +366,13 @@ export async function fetchPushRegistrationStatus(branchKey, staffId) {
   if (!res.ok) {
     throw new Error(data.error || 'Push durumu alınamadı');
   }
+
+  try {
+    sessionStorage.setItem(PUSH_STATUS_CHECK_KEY, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+
   return data;
 }
 

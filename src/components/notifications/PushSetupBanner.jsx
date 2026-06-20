@@ -43,7 +43,9 @@ export async function resolvePushSetupMessage(branchKey, staffId, entryResult) {
   }
 
   if (entryResult?.ok && isPushRegisteredLocally(staffId)) {
-    return '';
+    return entryResult.quotaBlocked
+      ? 'Firebase kotası dolu — kayıt daha önce yapılmış olabilir, birkaç saat sonra tekrar deneyin.'
+      : '';
   }
 
   if (entryResult && !entryResult.ok && entryResult.reason !== 'already_prompted') {
@@ -66,5 +68,5 @@ export async function resolvePushSetupMessage(branchKey, staffId, entryResult) {
 }
 
 export async function retryPushRegistration(branchKey, staffId) {
-  return registerStaffPushNotifications(branchKey, staffId);
+  return registerStaffPushNotifications(branchKey, staffId, { forceSync: true });
 }
