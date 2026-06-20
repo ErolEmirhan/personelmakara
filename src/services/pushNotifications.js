@@ -1,5 +1,11 @@
 import { getApps } from 'firebase/app';
 import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
+import {
+  fetchBranchPushTokens,
+  getStaffPushRegistrationStatus,
+  pruneInvalidPushTokens,
+  saveStaffPushToken,
+} from './firebaseService';
 
 const VAPID_BY_BRANCH = {
   makara: import.meta.env.VITE_FCM_VAPID_KEY_MAKARA,
@@ -53,31 +59,6 @@ function getStoredPushToken(staffId) {
   } catch {
     return null;
   }
-}
-
-function clearPushRegistration(staffId) {
-  try {
-    if (localStorage.getItem(PUSH_REGISTERED_KEY) === String(staffId)) {
-      localStorage.removeItem(PUSH_REGISTERED_KEY);
-    }
-    const raw = localStorage.getItem(PUSH_TOKEN_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed?.staffId === String(staffId)) {
-        localStorage.removeItem(PUSH_TOKEN_KEY);
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-function isQuotaError(err) {
-  const message = err?.message || String(err || '');
-  return message.includes('RESOURCE_EXHAUSTED')
-    || message.includes('Quota exceeded')
-    || message.includes('firestore_quota_exceeded')
-    || message.includes('günlük kotası');
 }
 
 export async function isPushSupported() {
@@ -140,16 +121,11 @@ async function waitForServiceWorkerRegistration() {
 }
 
 async function persistPushToken(branchKey, staffId, token) {
-  const res = await fetch(apiUrl('api/register-push-token'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchKey, staffId, token }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || 'Push token sunucuya kaydedilemedi');
+  const result = await saveStaffPushToken(staffId, branchKey, token);
+  if (!result?.success) {
+    throw new Error('Push token Firestore\'a kaydedilemedi');
   }
-  return data;
+  return result;
 }
 
 export function pushRegistrationErrorMessage(reason, err) {
@@ -169,9 +145,6 @@ export function pushRegistrationErrorMessage(reason, err) {
     case 'already_synced':
       return '';
     default:
-      if (isQuotaError(err)) {
-        return 'Firebase günlük kotası doldu. Birkaç saat sonra tekrar deneyin veya Firebase planını yükseltin.';
-      }
       return err?.message || 'Push kaydı yapılamadı';
   }
 }
@@ -230,12 +203,6 @@ export async function registerStaffPushNotifications(branchKey, staffId, { force
     return { ok: true, permission, token };
   } catch (err) {
     console.error('registerStaffPushNotifications:', err);
-    if (isQuotaError(err)) {
-      if (isPushRegisteredLocally(staffId) && getStoredPushToken(staffId)) {
-        ensureForegroundPushHandler();
-        return { ok: true, reason: 'already_synced', quotaBlocked: true };
-      }
-    }
     return { ok: false, reason: 'error', error: err };
   }
 }
@@ -348,24 +315,18 @@ export function ensureForegroundPushHandler() {
 }
 
 export async function fetchPushRegistrationStatus(branchKey, staffId) {
-  try {
-    const lastCheck = Number(sessionStorage.getItem(PUSH_STATUS_CHECK_KEY) || 0);
-    if (Date.now() - lastCheck < PUSH_STATUS_CHECK_COOLDOWN_MS && isPushRegisteredLocally(staffId)) {
-      return { staffRegistered: true, cached: true };
+  if (isPushRegisteredLocally(staffId) && getStoredPushToken(staffId)) {
+    try {
+      const lastCheck = Number(sessionStorage.getItem(PUSH_STATUS_CHECK_KEY) || 0);
+      if (Date.now() - lastCheck < PUSH_STATUS_CHECK_COOLDOWN_MS) {
+        return { staffRegistered: true, cached: true };
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
 
-  const res = await fetch(apiUrl('api/push-status'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchKey, staffId }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || 'Push durumu alınamadı');
-  }
+  const status = await getStaffPushRegistrationStatus(staffId);
 
   try {
     sessionStorage.setItem(PUSH_STATUS_CHECK_KEY, String(Date.now()));
@@ -373,14 +334,23 @@ export async function fetchPushRegistrationStatus(branchKey, staffId) {
     /* ignore */
   }
 
-  return data;
+  if (status.staffRegistered) {
+    markPushRegistered(staffId, getStoredPushToken(staffId));
+  }
+
+  return status;
 }
 
 export async function sendSelfTestPush(branchKey, staffId) {
+  const token = getStoredPushToken(staffId);
+  if (!token) {
+    throw new Error('Bu cihazda kayıtlı token yok — önce Cihazı kaydet');
+  }
+
   const res = await fetch(apiUrl('api/push-self-test'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ branchKey, staffId }),
+    body: JSON.stringify({ branchKey, token }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -390,6 +360,8 @@ export async function sendSelfTestPush(branchKey, staffId) {
 }
 
 export async function sendAnnouncementPush({ branchKey, staffId, title, message, announcementId }) {
+  const tokens = await fetchBranchPushTokens(branchKey);
+
   const res = await fetch(apiUrl('api/push-announcement'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -399,6 +371,7 @@ export async function sendAnnouncementPush({ branchKey, staffId, title, message,
       title,
       message,
       announcementId,
+      tokens,
     }),
   });
 
@@ -406,5 +379,10 @@ export async function sendAnnouncementPush({ branchKey, staffId, title, message,
   if (!res.ok) {
     throw new Error(data.error || 'Push API hatası');
   }
+
+  if (data.invalidTokens?.length) {
+    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
+  }
+
   return data;
 }

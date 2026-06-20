@@ -929,22 +929,72 @@ export async function saveStaffPushToken(staffId, branchKey, token) {
 
   if (snap.exists()) {
     const existing = snap.data().tokens || [];
+    if (existing.includes(token)) {
+      return { success: true, unchanged: true, tokenCount: existing.length };
+    }
     const merged = [...new Set([...existing, token])].slice(-MAX_PUSH_TOKENS_PER_STAFF);
     await updateDoc(ref, {
       branchKey,
       tokens: merged,
       updatedAt: serverTimestamp(),
     });
-  } else {
-    await setDoc(ref, {
-      staffId,
-      branchKey,
-      tokens: [token],
-      updatedAt: serverTimestamp(),
-    });
+    return { success: true, tokenCount: merged.length };
   }
 
-  return { success: true };
+  await setDoc(ref, {
+    staffId,
+    branchKey,
+    tokens: [token],
+    updatedAt: serverTimestamp(),
+  });
+  return { success: true, tokenCount: 1 };
+}
+
+export async function getStaffPushRegistrationStatus(staffId) {
+  const db = requireMainDb();
+  const ref = doc(db, STAFF_PUSH_TOKENS, String(staffId));
+  const snap = await getDoc(ref);
+  const tokens = snap.exists() ? (snap.data().tokens || []) : [];
+  return {
+    staffRegistered: tokens.length > 0,
+    staffTokenCount: tokens.length,
+  };
+}
+
+export async function fetchBranchPushTokens(branchKey) {
+  const db = requireMainDb();
+  const snap = await getDocs(
+    query(collection(db, STAFF_PUSH_TOKENS), where('branchKey', '==', branchKey))
+  );
+  const tokens = new Set();
+  snap.forEach((docSnap) => {
+    for (const token of docSnap.data()?.tokens || []) {
+      if (typeof token === 'string' && token.length > 20) tokens.add(token);
+    }
+  });
+  return [...tokens];
+}
+
+export async function pruneInvalidPushTokens(branchKey, invalidTokens) {
+  if (!branchKey || !invalidTokens?.length) return;
+  const db = requireMainDb();
+  const snap = await getDocs(
+    query(collection(db, STAFF_PUSH_TOKENS), where('branchKey', '==', branchKey))
+  );
+  const removeSet = new Set(invalidTokens);
+  const batch = writeBatch(db);
+  let writes = 0;
+
+  snap.forEach((docSnap) => {
+    const current = docSnap.data()?.tokens || [];
+    const next = current.filter((t) => !removeSet.has(t));
+    if (next.length !== current.length) {
+      batch.update(docSnap.ref, { tokens: next, updatedAt: serverTimestamp() });
+      writes += 1;
+    }
+  });
+
+  if (writes > 0) await batch.commit();
 }
 
 export { YAN_URUNLER_CATEGORY_ID, getBranchTheme };

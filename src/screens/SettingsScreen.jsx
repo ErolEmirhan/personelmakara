@@ -265,9 +265,7 @@ export function SettingsScreen() {
       setPushPermission(permission);
       if (result.ok) {
         setPushRegistered(true);
-        if (result.quotaBlocked) {
-          setPushStatusNote('Cihaz daha önce kaydedildi. Firebase kotası dolu — birkaç saat sonra tekrar deneyin.');
-        } else if (result.reason === 'already_synced') {
+        if (result.reason === 'already_synced') {
           setPushStatusNote('Bu cihaz zaten kayıtlı — push bildirimleri aktif.');
         } else {
           try {

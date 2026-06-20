@@ -1,7 +1,4 @@
-import { getAdminForBranch } from './_lib/firebaseAdmin.js';
-import { firestoreErrorResponse } from './_lib/firestoreErrors.js';
-
-const STAFF_PUSH_TOKENS = 'staff_push_tokens';
+import { getMessagingForBranch } from './_lib/firebaseAdmin.js';
 
 function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json');
@@ -23,21 +20,14 @@ export default async function handler(req, res) {
   }
 
   const branchKey = body?.branchKey;
-  const staffId = body?.staffId;
+  const token = (body?.token || '').trim();
 
-  if (!branchKey || staffId == null) {
-    return json(res, 400, { error: 'branchKey ve staffId gerekli' });
+  if (!branchKey || !token) {
+    return json(res, 400, { error: 'branchKey ve token gerekli' });
   }
 
   try {
-    const { db, messaging } = getAdminForBranch(branchKey);
-
-    const snap = await db.collection(STAFF_PUSH_TOKENS).doc(String(staffId)).get();
-    const tokens = snap.exists ? (snap.data()?.tokens || []).filter((t) => typeof t === 'string' && t.length > 20) : [];
-
-    if (tokens.length === 0) {
-      return json(res, 200, { success: true, sent: 0, message: 'Bu cihaz için kayıtlı token yok' });
-    }
+    const messaging = getMessagingForBranch(branchKey);
 
     const host = req.headers['x-forwarded-host'] || req.headers.host || '';
     const protocol = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
@@ -49,7 +39,7 @@ export default async function handler(req, res) {
     const testBody = 'Push çalışıyor — bu cihaz bildirim alabiliyor.';
 
     const response = await messaging.sendEachForMulticast({
-      tokens,
+      tokens: [token],
       data: {
         type: 'staff_announcement',
         branchKey: String(branchKey),
@@ -75,12 +65,11 @@ export default async function handler(req, res) {
       success: true,
       sent: response.successCount,
       failed: response.failureCount,
-      totalTokens: tokens.length,
+      totalTokens: 1,
       firstError,
     });
   } catch (err) {
     console.error('push-self-test error:', err);
-    const { status, body: errorBody } = firestoreErrorResponse(err);
-    return json(res, status, errorBody);
+    return json(res, 500, { error: err.message || 'Test push gönderilemedi' });
   }
 }

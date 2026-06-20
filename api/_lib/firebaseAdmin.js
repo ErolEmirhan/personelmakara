@@ -39,6 +39,10 @@ export function getAdminForBranch(branchKey) {
   return initialized.get(branchKey);
 }
 
+export function getMessagingForBranch(branchKey) {
+  return getAdminForBranch(branchKey).messaging;
+}
+
 export function canSendAnnouncements(staff) {
   return !!(staff?.is_admin || staff?.is_manager || staff?.is_boss);
 }

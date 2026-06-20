@@ -1,8 +1,5 @@
-import { getAdminForBranch, canSendAnnouncements } from './_lib/firebaseAdmin.js';
-import { firestoreErrorResponse } from './_lib/firestoreErrors.js';
+import { getMessagingForBranch } from './_lib/firebaseAdmin.js';
 
-const STAFF_PUSH_TOKENS = 'staff_push_tokens';
-const STAFF_COLLECTION = 'staff';
 const MAX_TOKENS_PER_BATCH = 500;
 
 function json(res, status, body) {
@@ -10,52 +7,9 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-async function collectBranchTokens(db, branchKey, excludeStaffId) {
-  const snap = await db.collection(STAFF_PUSH_TOKENS).where('branchKey', '==', branchKey).get();
-  const tokens = new Set();
-  const tokenDocIds = new Map();
-
-  snap.forEach((docSnap) => {
-    if (excludeStaffId && docSnap.id === String(excludeStaffId)) return;
-    const data = docSnap.data() || {};
-    for (const token of data.tokens || []) {
-      if (typeof token === 'string' && token.length > 20) {
-        tokens.add(token);
-        tokenDocIds.set(token, docSnap.id);
-      }
-    }
-  });
-
-  return { tokens: [...tokens], tokenDocIds };
-}
-
-async function removeInvalidTokens(db, tokensToRemove, tokenDocIds) {
-  if (!tokensToRemove.length) return;
-
-  const docIds = new Set(
-    tokensToRemove.map((token) => tokenDocIds.get(token)).filter(Boolean)
-  );
-
-  if (docIds.size === 0) return;
-
-  const batch = db.batch();
-  let writes = 0;
-
-  for (const docId of docIds) {
-    const ref = db.collection(STAFF_PUSH_TOKENS).doc(docId);
-    const docSnap = await ref.get();
-    if (!docSnap.exists) continue;
-
-    const data = docSnap.data() || {};
-    const current = data.tokens || [];
-    const next = current.filter((t) => !tokensToRemove.includes(t));
-    if (next.length !== current.length) {
-      batch.set(ref, { ...data, tokens: next, updatedAt: new Date() }, { merge: true });
-      writes += 1;
-    }
-  }
-
-  if (writes > 0) await batch.commit();
+function normalizeTokens(raw) {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((t) => typeof t === 'string' && t.length > 20))];
 }
 
 export default async function handler(req, res) {
@@ -73,13 +27,13 @@ export default async function handler(req, res) {
   }
 
   const branchKey = body?.branchKey;
-  const staffId = body?.staffId;
   const title = (body?.title || '').trim();
   const message = (body?.message || '').trim();
   const announcementId = body?.announcementId || null;
+  const tokens = normalizeTokens(body?.tokens);
 
-  if (!branchKey || staffId == null || !message) {
-    return json(res, 400, { error: 'branchKey, staffId ve message gerekli' });
+  if (!branchKey || !message) {
+    return json(res, 400, { error: 'branchKey ve message gerekli' });
   }
 
   const optionalSecret = process.env.PUSH_API_SECRET;
@@ -87,26 +41,12 @@ export default async function handler(req, res) {
     return json(res, 401, { error: 'Yetkisiz istek' });
   }
 
+  if (tokens.length === 0) {
+    return json(res, 200, { success: true, sent: 0, message: 'Kayıtlı cihaz yok' });
+  }
+
   try {
-    const { db, messaging } = getAdminForBranch(branchKey);
-
-    const staffSnap = await db.collection(STAFF_COLLECTION).doc(String(staffId)).get();
-    if (!staffSnap.exists) {
-      return json(res, 403, { error: 'Personel bulunamadı' });
-    }
-
-    const staff = staffSnap.data();
-    if (staff.branchKey && staff.branchKey !== branchKey) {
-      return json(res, 403, { error: 'Şube uyuşmuyor' });
-    }
-    if (!canSendAnnouncements(staff)) {
-      return json(res, 403, { error: 'Bildirim gönderme yetkisi yok' });
-    }
-
-    const { tokens, tokenDocIds } = await collectBranchTokens(db, branchKey, null);
-    if (tokens.length === 0) {
-      return json(res, 200, { success: true, sent: 0, message: 'Kayıtlı cihaz yok' });
-    }
+    const messaging = getMessagingForBranch(branchKey);
 
     const notificationTitle = title || 'MAKARA · Ekip bildirimi';
     const notificationBody = message.length > 180 ? `${message.slice(0, 177)}…` : message;
@@ -115,13 +55,13 @@ export default async function handler(req, res) {
     const protocol = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
     const origin = host ? `${protocol}://${host}` : '';
 
+    const iconUrl = origin ? `${origin}/icons/icon-192.png` : '/icons/icon-192.png';
+    const openUrl = origin ? `${origin}/?tab=notifications` : '/?tab=notifications';
+
     let sent = 0;
     let failed = 0;
     const invalidTokens = [];
     let firstError = null;
-
-    const iconUrl = origin ? `${origin}/icons/icon-192.png` : '/icons/icon-192.png';
-    const openUrl = origin ? `${origin}/?tab=notifications` : '/?tab=notifications';
 
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
       const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
@@ -168,19 +108,16 @@ export default async function handler(req, res) {
       });
     }
 
-    await removeInvalidTokens(db, invalidTokens, tokenDocIds);
-
     return json(res, 200, {
       success: true,
       sent,
       failed,
       totalTokens: tokens.length,
-      invalidRemoved: invalidTokens.length,
+      invalidTokens,
       firstError,
     });
   } catch (err) {
     console.error('push-announcement error:', err);
-    const { status, body: errorBody } = firestoreErrorResponse(err);
-    return json(res, status, errorBody);
+    return json(res, 500, { error: err.message || 'Push gönderilemedi' });
   }
 }
