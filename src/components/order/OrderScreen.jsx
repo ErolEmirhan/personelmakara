@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { canCancelOrderItem } from '../../config/branch';
 import { ProductCard } from './ProductCard';
+import { CategoryTabs } from './CategoryTabs';
 import { ExistingOrdersPanel } from './ExistingOrdersPanel';
 import { CancelItemModal } from '../modals/CancelItemModal';
 
@@ -32,14 +33,6 @@ export function OrderScreen() {
     return products;
   }, [products, selectedCategory, searchQuery]);
 
-  const categoryRows = useMemo(() => {
-    const rows = [[], [], []];
-    categories.forEach((cat, i) => {
-      rows[i % 3].push(cat);
-    });
-    return rows;
-  }, [categories]);
-
   const canCancel = canCancelOrderItem(staff, branchKey);
 
   return (
@@ -54,28 +47,12 @@ export function OrderScreen() {
         Masalara Dön
       </button>
 
-      {/* Category tabs */}
-      <div className="overflow-x-auto mb-4 -mx-4 px-4">
-        <div className="flex flex-col gap-1.5 min-w-max">
-          {categoryRows.map((row, ri) => (
-            <div key={ri} className="flex gap-2">
-              {row.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
-                    selectedCategory === cat.id
-                      ? 'bg-gradient-to-r from-pink-100 to-fuchsia-100 text-pink-600 border-2 border-pink-200 shadow-md'
-                      : 'bg-white border-2 border-gray-100 text-gray-600'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
+      <CategoryTabs
+        categories={categories}
+        products={products}
+        selectedCategory={selectedCategory}
+        onSelect={setSelectedCategory}
+      />
 
       {/* Search */}
       <div className="relative mb-4">
