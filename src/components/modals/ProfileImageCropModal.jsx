@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import Cropper from 'react-easy-crop';
-import { getCroppedProfileDataUrl } from '../../services/staffProfileImage';
+import { getCroppedProfileDataUrl, getCroppedImageDataUrl } from '../../services/staffProfileImage';
 
-export function ProfileImageCropModal({ open, imageSrc, onConfirm, onCancel, accent = 'from-violet-500 to-fuchsia-500' }) {
+export function ProfileImageCropModal({
+  open,
+  imageSrc,
+  onConfirm,
+  onCancel,
+  accent = 'from-violet-500 to-fuchsia-500',
+  aspect = 1,
+  maxEdge = 320,
+  quality = 0.85,
+  title = 'Fotoğrafı Kırp',
+  confirmLabel = 'Kaydet',
+  hint = 'Alanı sürükleyerek konumlandırın, kaydırıcı ile yakınlaştırın',
+  useProfileCrop = true,
+}) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
@@ -25,7 +38,9 @@ export function ProfileImageCropModal({ open, imageSrc, onConfirm, onCancel, acc
     if (!imageSrc || !croppedAreaPixels || saving) return;
     setSaving(true);
     try {
-      const dataUrl = await getCroppedProfileDataUrl(imageSrc, croppedAreaPixels);
+      const dataUrl = useProfileCrop
+        ? await getCroppedProfileDataUrl(imageSrc, croppedAreaPixels, maxEdge)
+        : await getCroppedImageDataUrl(imageSrc, croppedAreaPixels, { maxEdge, quality });
       await onConfirm(dataUrl);
     } finally {
       setSaving(false);
@@ -45,14 +60,14 @@ export function ProfileImageCropModal({ open, imageSrc, onConfirm, onCancel, acc
         >
           İptal
         </button>
-        <h3 className="text-white font-display font-bold text-base">Fotoğrafı Kırp</h3>
+        <h3 className="text-white font-display font-bold text-base">{title}</h3>
         <button
           type="button"
           onClick={handleConfirm}
           disabled={saving || !croppedAreaPixels}
           className={`text-sm font-bold px-3 py-1.5 rounded-xl bg-gradient-to-r ${accent} text-white disabled:opacity-50`}
         >
-          {saving ? '...' : 'Kaydet'}
+          {saving ? '...' : confirmLabel}
         </button>
       </div>
 
@@ -61,7 +76,7 @@ export function ProfileImageCropModal({ open, imageSrc, onConfirm, onCancel, acc
           image={imageSrc}
           crop={crop}
           zoom={zoom}
-          aspect={1}
+          aspect={aspect}
           cropShape="rect"
           showGrid
           onCropChange={setCrop}
@@ -87,7 +102,7 @@ export function ProfileImageCropModal({ open, imageSrc, onConfirm, onCancel, acc
           />
         </div>
         <p className="text-center text-white/45 text-xs leading-relaxed">
-          Kare alanı sürükleyerek konumlandırın, kaydırıcı ile yakınlaştırın
+          {hint}
         </p>
       </div>
     </div>

@@ -18,7 +18,6 @@ import { OrdersScreen } from './OrdersScreen';
 import { NotificationsScreen } from './NotificationsScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
-import { PushSetupBanner, resolvePushSetupMessage, retryPushRegistration } from '../components/notifications/PushSetupBanner';
 import { IncomingPushBanner } from '../components/notifications/IncomingPushBanner';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
@@ -30,7 +29,6 @@ export function MainScreen() {
   const { screen, mainTab, loadData, setMainTab, showToast } = useApp();
   const [broadcast, setBroadcast] = useState(null);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
-  const [pushBanner, setPushBanner] = useState('');
   const [incomingPush, setIncomingPush] = useState(null);
 
   useAndroidBackNavigation({ accountOpen: quickActionsOpen, setAccountOpen: setQuickActionsOpen });
@@ -73,11 +71,7 @@ export function MainScreen() {
       }
       if (cancelled) return;
 
-      const result = await requestPushOnAppEntry(branchKey, staff.id);
-      if (cancelled) return;
-
-      const message = await resolvePushSetupMessage(branchKey, staff.id, result);
-      if (!cancelled) setPushBanner(message);
+      await requestPushOnAppEntry(branchKey, staff.id);
     })();
 
     const onSwMessage = (event) => {
@@ -175,19 +169,6 @@ export function MainScreen() {
             setIncomingPush(null);
           }}
           onDismiss={() => setIncomingPush(null)}
-        />
-      )}
-      {pushBanner && (
-        <PushSetupBanner
-          branchKey={branchKey}
-          staffId={staff?.id}
-          message={pushBanner}
-          onRetry={async () => {
-            const result = await retryPushRegistration(branchKey, staff.id);
-            const message = await resolvePushSetupMessage(branchKey, staff.id, result);
-            setPushBanner(message);
-          }}
-          onDismiss={() => setPushBanner('')}
         />
       )}
       <main style={{ paddingTop: MAIN_CONTENT_TOP_PADDING }}>

@@ -390,6 +390,7 @@ export async function notifySupportMessagePush({
   senderIsAdmin,
   senderName,
   recipientStaffId,
+  hasImage = false,
 }) {
   if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
 
@@ -414,7 +415,10 @@ export async function notifySupportMessagePush({
     : `Destek · ${(senderName || 'Personel').trim()}`;
   const headline = senderIsAdmin ? title : `${title} · ${categoryLabel}`;
   const preview = (messageText || '').trim();
-  const message = preview.length > 160 ? `${preview.slice(0, 157)}…` : preview;
+  const message = preview
+    ? (hasImage && !preview.includes('📷') ? `${preview} · 📷 Görsel` : preview)
+    : '📷 Görsel';
+  const body = message.length > 160 ? `${message.slice(0, 157)}…` : message;
 
   const res = await fetch(apiUrl('api/push-announcement'), {
     method: 'POST',
@@ -422,8 +426,57 @@ export async function notifySupportMessagePush({
     body: JSON.stringify({
       branchKey,
       title: headline,
-      message,
+      message: body,
       tokens,
+      pushType: 'staff_support',
+      ticketId,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Push API hatası');
+  }
+
+  if (data.invalidTokens?.length) {
+    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
+  }
+
+  return data;
+}
+
+export async function notifySupportResolvedPush({
+  branchKey,
+  ticketId,
+  category,
+  resolverStaffId,
+  ticketStaffId,
+  resolvedByName,
+}) {
+  if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
+
+  const tokens = new Set();
+  for (const token of await fetchStaffPushTokens(ticketStaffId)) tokens.add(token);
+  for (const token of await fetchAdminPushTokens(branchKey)) tokens.add(token);
+
+  const resolverTokens = await fetchStaffPushTokens(resolverStaffId);
+  const exclude = new Set(resolverTokens);
+  const targetTokens = [...tokens].filter((t) => !exclude.has(t));
+
+  if (!targetTokens.length) return { sent: 0 };
+
+  const categoryLabel = supportCategoryLabel(category);
+  const title = `Destek · ${categoryLabel}`;
+  const message = resolvedByName ? `${resolvedByName}\nÇözüldü` : 'Çözüldü';
+
+  const res = await fetch(apiUrl('api/push-announcement'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      branchKey,
+      title,
+      message,
+      tokens: targetTokens,
       pushType: 'staff_support',
       ticketId,
     }),

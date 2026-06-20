@@ -18,6 +18,8 @@ import {
 import { isStaffAdmin } from '../../utils/staffRole';
 import { formatLastSeen } from '../../utils/formatLastSeen';
 import { StaffAvatar } from '../ui/StaffAvatar';
+import { ProfileImageCropModal } from '../modals/ProfileImageCropModal';
+import { fileToDataUrl, validateSupportImageDataUrl } from '../../services/staffProfileImage';
 
 function FlagIcon({ className = 'w-5 h-5' }) {
   return (
@@ -108,19 +110,73 @@ function TicketListItem({ ticket, onClick, isAdminView }) {
   );
 }
 
-function MessageBubble({ message, isOwn, accentSolid, fallbackProfileSrc }) {
+function MessageImage({ src, onOpen }) {
+  if (!src) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen?.(src)}
+      className="block max-w-full rounded-xl overflow-hidden mt-1 first:mt-0 active:opacity-90"
+    >
+      <img
+        src={src}
+        alt="Ek görsel"
+        className="max-w-full max-h-56 w-auto rounded-xl object-cover"
+      />
+    </button>
+  );
+}
+
+function MessageBubbleContent({ message, isOwn, accentSolid, onImageOpen }) {
   const time = message.createdAtMs ? formatLastSeen(message.createdAtMs) : '';
+  const hasText = !!(message.text || '').trim();
+  const hasImage = !!message.imageSrc;
+
+  if (message.isAdmin) {
+    return (
+      <div className="max-w-[85%] rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm bg-white border border-slate-100 text-slate-800">
+        <p className="text-[10px] font-bold mb-1 text-violet-600">Admin</p>
+        {hasImage && <MessageImage src={message.imageSrc} onOpen={onImageOpen} />}
+        {hasText && <p className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${hasImage ? 'mt-2' : ''}`}>{message.text}</p>}
+        {time && <p className="text-[9px] mt-1.5 text-slate-400">{time}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <p className={`text-[10px] font-semibold text-slate-500 mb-1 px-0.5 ${isOwn ? 'text-right' : 'text-left'}`}>
+        {`${message.staffName} ${message.staffSurname}`.trim()}
+      </p>
+      <div
+        className={`rounded-2xl px-3.5 py-2.5 shadow-sm ${
+          isOwn
+            ? 'rounded-br-md text-white'
+            : 'rounded-bl-md bg-white border border-slate-100 text-slate-800'
+        }`}
+        style={isOwn ? { background: `linear-gradient(135deg, ${accentSolid} 0%, ${accentSolid}dd 100%)` } : undefined}
+      >
+        {hasImage && <MessageImage src={message.imageSrc} onOpen={onImageOpen} />}
+        {hasText && (
+          <p className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${hasImage ? 'mt-2' : ''}`}>
+            {message.text}
+          </p>
+        )}
+        {time && (
+          <p className={`text-[9px] mt-1.5 ${isOwn ? 'text-white/70' : 'text-slate-400'}`}>{time}</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function MessageBubble({ message, isOwn, accentSolid, fallbackProfileSrc, onImageOpen }) {
   const profileSrc = message.profileImageSrc || fallbackProfileSrc || null;
-  const displayName = `${message.staffName} ${message.staffSurname}`.trim();
 
   if (message.isAdmin) {
     return (
       <div className="flex justify-start mb-4">
-        <div className="max-w-[85%] rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm bg-white border border-slate-100 text-slate-800">
-          <p className="text-[10px] font-bold mb-1 text-violet-600">Admin</p>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
-          {time && <p className="text-[9px] mt-1.5 text-slate-400">{time}</p>}
-        </div>
+        <MessageBubbleContent message={message} isOwn={isOwn} accentSolid={accentSolid} onImageOpen={onImageOpen} />
       </div>
     );
   }
@@ -136,22 +192,7 @@ function MessageBubble({ message, isOwn, accentSolid, fallbackProfileSrc }) {
         />
       )}
       <div className={`flex flex-col max-w-[78%] min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
-        <p className={`text-[10px] font-semibold text-slate-500 mb-1 px-0.5 ${isOwn ? 'text-right' : 'text-left'}`}>
-          {displayName}
-        </p>
-        <div
-          className={`rounded-2xl px-3.5 py-2.5 shadow-sm ${
-            isOwn
-              ? 'rounded-br-md text-white'
-              : 'rounded-bl-md bg-white border border-slate-100 text-slate-800'
-          }`}
-          style={isOwn ? { background: `linear-gradient(135deg, ${accentSolid} 0%, ${accentSolid}dd 100%)` } : undefined}
-        >
-          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
-          {time && (
-            <p className={`text-[9px] mt-1.5 ${isOwn ? 'text-white/70' : 'text-slate-400'}`}>{time}</p>
-          )}
-        </div>
+        <MessageBubbleContent message={message} isOwn={isOwn} accentSolid={accentSolid} onImageOpen={onImageOpen} />
       </div>
       {isOwn && (
         <StaffAvatar
@@ -165,38 +206,125 @@ function MessageBubble({ message, isOwn, accentSolid, fallbackProfileSrc }) {
   );
 }
 
-function ComposerBar({ value, onChange, onSend, sending, placeholder, accentSolid }) {
+function SupportComposer({
+  value,
+  onChange,
+  pendingImage,
+  onPendingImageChange,
+  onImageError,
+  onSend,
+  sending,
+  placeholder,
+  accentSolid,
+  accentGradient = 'from-violet-500 to-fuchsia-500',
+}) {
+  const fileRef = useRef(null);
+  const [cropSrc, setCropSrc] = useState(null);
+  const canSend = (!!value.trim() || !!pendingImage) && !sending;
+
+  const handleFilePick = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setCropSrc(dataUrl);
+    } catch (err) {
+      onImageError?.(err.message || 'Görsel seçilemedi');
+    }
+  };
+
   return (
-    <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-sm">
-      <div className="flex gap-2 items-end">
-        <textarea
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
-          rows={1}
-          maxLength={2000}
-          className="flex-1 min-h-[44px] max-h-28 px-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/25 focus:border-violet-300 focus:bg-white"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
-          }}
-        />
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={!value.trim() || sending}
-          className="shrink-0 w-11 h-11 rounded-2xl text-white flex items-center justify-center disabled:opacity-40 active:scale-95 transition-all"
-          style={{ background: accentSolid }}
-          aria-label="Gönder"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-          </svg>
-        </button>
+    <>
+      <ProfileImageCropModal
+        open={!!cropSrc}
+        imageSrc={cropSrc}
+        aspect={4 / 3}
+        maxEdge={720}
+        quality={0.82}
+        useProfileCrop={false}
+        title="Görseli Kırp"
+        confirmLabel="Ekle"
+        hint="Görseli konumlandırın ve yakınlaştırın"
+        accent={accentGradient}
+        onConfirm={(dataUrl) => {
+          try {
+            validateSupportImageDataUrl(dataUrl);
+            onPendingImageChange(dataUrl);
+            setCropSrc(null);
+          } catch (err) {
+            onImageError?.(err.message || 'Görsel işlenemedi');
+            setCropSrc(null);
+          }
+        }}
+        onCancel={() => setCropSrc(null)}
+      />
+
+      <div className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-100 bg-white/95 backdrop-blur-sm">
+        {pendingImage && (
+          <div className="mb-2 flex items-center gap-2">
+            <div className="relative shrink-0">
+              <img src={pendingImage} alt="" className="w-16 h-16 rounded-xl object-cover border border-slate-200" />
+              <button
+                type="button"
+                onClick={() => onPendingImageChange(null)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-800 text-white text-xs flex items-center justify-center"
+                aria-label="Görseli kaldır"
+              >
+                ×
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-500">Görsel eklendi</span>
+          </div>
+        )}
+        <div className="flex gap-2 items-end">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={sending}
+            className="shrink-0 w-11 h-11 rounded-2xl border border-slate-200 bg-slate-50 text-slate-500 flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+            aria-label="Görsel ekle"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFilePick}
+          />
+          <textarea
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            rows={1}
+            maxLength={2000}
+            className="flex-1 min-h-[44px] max-h-28 px-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/25 focus:border-violet-300 focus:bg-white"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (canSend) onSend();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={!canSend}
+            className="shrink-0 w-11 h-11 rounded-2xl text-white flex items-center justify-center disabled:opacity-40 active:scale-95 transition-all"
+            style={{ background: accentSolid }}
+            aria-label="Gönder"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -226,7 +354,19 @@ function ResolvedStamp({ resolvedByName }) {
   );
 }
 
-function NewTicketView({ category, setCategory, text, setText, sending, onSubmit, accentSolid }) {
+function NewTicketView({
+  category,
+  setCategory,
+  text,
+  setText,
+  pendingImage,
+  setPendingImage,
+  sending,
+  onSubmit,
+  accentSolid,
+  accentGradient,
+  onImageError,
+}) {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-5">
@@ -254,13 +394,17 @@ function NewTicketView({ category, setCategory, text, setText, sending, onSubmit
         </div>
       </div>
 
-      <ComposerBar
+      <SupportComposer
         value={text}
         onChange={(e) => setText(e.target.value)}
+        pendingImage={pendingImage}
+        onPendingImageChange={setPendingImage}
+        onImageError={onImageError}
         onSend={onSubmit}
         sending={sending}
         placeholder="Sorununuzu veya önerinizi yazın…"
         accentSolid={accentSolid}
+        accentGradient={accentGradient}
       />
     </div>
   );
@@ -272,11 +416,16 @@ function ChatView({
   staff,
   draft,
   setDraft,
+  pendingImage,
+  setPendingImage,
   sending,
   resolving,
   onSend,
   onResolve,
+  onImageError,
+  onImageOpen,
   accentSolid,
+  accentGradient,
 }) {
   const scrollRef = useRef(null);
   const isAdmin = isStaffAdmin(staff);
@@ -302,6 +451,7 @@ function ChatView({
                 ? staff.profileImageSrc || staffProfileFallback
                 : staffProfileFallback
             }
+            onImageOpen={onImageOpen}
           />
         ))}
       </div>
@@ -320,13 +470,17 @@ function ChatView({
               </button>
             </div>
           )}
-          <ComposerBar
+          <SupportComposer
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            pendingImage={pendingImage}
+            onPendingImageChange={setPendingImage}
+            onImageError={onImageError}
             onSend={onSend}
             sending={sending}
             placeholder="Mesajınızı yazın…"
             accentSolid={accentSolid}
+            accentGradient={accentGradient}
           />
         </>
       )}
@@ -367,12 +521,16 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
   const [messages, setMessages] = useState([]);
   const [newCategory, setNewCategory] = useState('issue');
   const [newText, setNewText] = useState('');
+  const [newImage, setNewImage] = useState(null);
   const [draft, setDraft] = useState('');
+  const [draftImage, setDraftImage] = useState(null);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const [sending, setSending] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState('');
 
   const accentSolid = theme.accentSolid || '#7c3aed';
+  const accentGradient = theme.accent || 'from-violet-500 to-fuchsia-500';
 
   useEffect(() => {
     if (!open || !staff?.id) return undefined;
@@ -380,6 +538,7 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
     setView(isAdmin ? 'list' : 'new');
     setSelectedTicket(null);
     setNewText('');
+    setNewImage(null);
     setError('');
 
     try {
@@ -448,19 +607,22 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
     setSelectedTicket(ticket);
     setView('chat');
     setDraft('');
+    setDraftImage(null);
     setError('');
   };
 
   const handleCreate = async () => {
-    if (!staff || !newText.trim() || sending) return;
+    if (!staff || (!newText.trim() && !newImage) || sending) return;
     setSending(true);
     setError('');
     try {
       const id = await createSupportTicket(branchKey, staff, {
         category: newCategory,
         text: newText.trim(),
+        imageSrc: newImage,
       });
       setNewText('');
+      setNewImage(null);
       setView('chat');
       setSelectedTicket({
         id,
@@ -478,12 +640,16 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
   };
 
   const handleSend = async () => {
-    if (!staff || !selectedTicket || !draft.trim() || sending) return;
+    if (!staff || !selectedTicket || (!draft.trim() && !draftImage) || sending) return;
     setSending(true);
     setError('');
     try {
-      await sendSupportMessage(selectedTicket.id, staff, draft.trim());
+      await sendSupportMessage(selectedTicket.id, staff, {
+        text: draft.trim(),
+        imageSrc: draftImage,
+      });
       setDraft('');
+      setDraftImage(null);
     } catch (err) {
       setError(err.message || 'Mesaj gönderilemedi');
     } finally {
@@ -654,9 +820,13 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
               setCategory={setNewCategory}
               text={newText}
               setText={setNewText}
+              pendingImage={newImage}
+              setPendingImage={setNewImage}
               sending={sending}
               onSubmit={handleCreate}
               accentSolid={accentSolid}
+              accentGradient={accentGradient}
+              onImageError={(msg) => setError(msg)}
             />
           </div>
         )}
@@ -668,14 +838,30 @@ export function SupportPanel({ open, onClose, initialTicketId = null }) {
             staff={staff}
             draft={draft}
             setDraft={setDraft}
+            pendingImage={draftImage}
+            setPendingImage={setDraftImage}
             sending={sending}
             resolving={resolving}
             onSend={handleSend}
             onResolve={handleResolve}
+            onImageError={(msg) => setError(msg)}
+            onImageOpen={setLightboxSrc}
             accentSolid={accentSolid}
+            accentGradient={accentGradient}
           />
         )}
       </div>
+
+      {lightboxSrc && (
+        <button
+          type="button"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxSrc(null)}
+          aria-label="Görseli kapat"
+        >
+          <img src={lightboxSrc} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
+        </button>
+      )}
     </div>
   );
 }

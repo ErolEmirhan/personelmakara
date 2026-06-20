@@ -1050,10 +1050,28 @@ function mapSupportMessage(docSnap) {
     staffName: data.staffName || '',
     staffSurname: data.staffSurname || '',
     profileImageSrc: data.profileImageSrc || null,
+    imageSrc: data.imageSrc || null,
     isAdmin: !!data.isAdmin,
     text: data.text || '',
     createdAtMs: timestampToMs(data.createdAt),
   };
+}
+
+function supportMessagePreview(text, imageSrc) {
+  const trimmed = (text || '').trim();
+  if (trimmed && imageSrc) return `${trimmed.slice(0, 180)} 📷`;
+  if (trimmed) return trimmed.slice(0, 200);
+  if (imageSrc) return '📷 Görsel';
+  return '';
+}
+
+async function queueSupportResolvedPush(params) {
+  try {
+    const { notifySupportResolvedPush } = await import('./pushNotifications');
+    await notifySupportResolvedPush(params);
+  } catch (err) {
+    console.warn('support resolved push failed:', err);
+  }
 }
 
 async function queueSupportMessagePush(params) {
@@ -1065,11 +1083,13 @@ async function queueSupportMessagePush(params) {
   }
 }
 
-export async function createSupportTicket(branchKey, staff, { category, text }) {
+export async function createSupportTicket(branchKey, staff, { category, text, imageSrc = null }) {
   const trimmed = (text || '').trim();
-  if (!trimmed) throw new Error('Mesaj gerekli');
+  const image = imageSrc || null;
+  if (!trimmed && !image) throw new Error('Mesaj veya görsel gerekli');
 
   const db = requireMainDb();
+  const preview = supportMessagePreview(trimmed, image);
   const ticketRef = await addDoc(collection(db, STAFF_SUPPORT_TICKETS), {
     branchKey,
     staffId: staff.id,
@@ -1078,7 +1098,7 @@ export async function createSupportTicket(branchKey, staff, { category, text }) 
     staffProfileImageSrc: staff.profileImageSrc || null,
     category: category || 'issue',
     status: 'open',
-    lastMessage: trimmed.slice(0, 200),
+    lastMessage: preview,
     lastMessageAt: serverTimestamp(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -1092,6 +1112,7 @@ export async function createSupportTicket(branchKey, staff, { category, text }) 
     profileImageSrc: staff.profileImageSrc || null,
     isAdmin: !!staff.is_admin,
     text: trimmed,
+    imageSrc: image,
     createdAt: serverTimestamp(),
   });
 
@@ -1099,7 +1120,8 @@ export async function createSupportTicket(branchKey, staff, { category, text }) 
     branchKey,
     ticketId: ticketRef.id,
     category: category || 'issue',
-    messageText: trimmed,
+    messageText: trimmed || '📷 Görsel',
+    hasImage: !!image,
     senderStaffId: staff.id,
     senderIsAdmin: !!staff.is_admin,
     senderName: `${staff.name || ''} ${staff.surname || ''}`.trim(),
@@ -1173,9 +1195,11 @@ export function subscribeSupportMessages(ticketId, onUpdate) {
   );
 }
 
-export async function sendSupportMessage(ticketId, staff, text) {
-  const trimmed = (text || '').trim();
-  if (!trimmed) throw new Error('Mesaj gerekli');
+export async function sendSupportMessage(ticketId, staff, payload) {
+  const normalized = typeof payload === 'string' ? { text: payload } : (payload || {});
+  const trimmed = (normalized.text || '').trim();
+  const image = normalized.imageSrc || null;
+  if (!trimmed && !image) throw new Error('Mesaj veya görsel gerekli');
 
   const db = requireMainDb();
   const ticketRef = doc(db, STAFF_SUPPORT_TICKETS, ticketId);
@@ -1198,11 +1222,12 @@ export async function sendSupportMessage(ticketId, staff, text) {
     profileImageSrc: staff.profileImageSrc || null,
     isAdmin,
     text: trimmed,
+    imageSrc: image,
     createdAt: serverTimestamp(),
   });
 
   await updateDoc(ticketRef, {
-    lastMessage: trimmed.slice(0, 200),
+    lastMessage: supportMessagePreview(trimmed, image),
     lastMessageAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     needsAdminReply: !isAdmin,
@@ -1212,7 +1237,8 @@ export async function sendSupportMessage(ticketId, staff, text) {
     branchKey: ticket.branchKey,
     ticketId,
     category: ticket.category || 'issue',
-    messageText: trimmed,
+    messageText: trimmed || '📷 Görsel',
+    hasImage: !!image,
     senderStaffId: staff.id,
     senderIsAdmin: isAdmin,
     senderName: `${staff.name || ''} ${staff.surname || ''}`.trim(),
@@ -1228,12 +1254,25 @@ export async function resolveSupportTicket(ticketId, adminStaff) {
   const ticketSnap = await getDoc(ticketRef);
   if (!ticketSnap.exists()) throw new Error('Konuşma bulunamadı');
 
+  const ticket = ticketSnap.data();
+  const resolvedByName = `${adminStaff.name || ''} ${adminStaff.surname || ''}`.trim();
+
   await updateDoc(ticketRef, {
     status: 'resolved',
     resolvedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    resolvedByName: `${adminStaff.name || ''} ${adminStaff.surname || ''}`.trim(),
+    resolvedByName,
     needsAdminReply: false,
+    lastMessage: 'Çözüldü',
+  });
+
+  queueSupportResolvedPush({
+    branchKey: ticket.branchKey,
+    ticketId,
+    category: ticket.category || 'issue',
+    resolverStaffId: adminStaff.id,
+    ticketStaffId: ticket.staffId,
+    resolvedByName,
   });
 }
 
