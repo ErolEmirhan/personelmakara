@@ -26,7 +26,6 @@ const RIGHT_TABS = [
   {
     id: MAIN_TABS.NOTIFICATIONS,
     label: 'Bildirimler',
-    badge: true,
     icon: (active) => (
       <svg className="w-[22px] h-[22px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active ? 2.25 : 1.75}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
@@ -45,7 +44,9 @@ const RIGHT_TABS = [
   },
 ];
 
-function NavItem({ tab, active, accent, onSelect }) {
+function NavItem({ tab, active, accent, onSelect, badgeCount = 0 }) {
+  const showBadge = badgeCount > 0;
+
   return (
     <button
       type="button"
@@ -62,8 +63,13 @@ function NavItem({ tab, active, accent, onSelect }) {
         style={active ? { color: accent, backgroundColor: `${accent}14` } : undefined}
       >
         {tab.icon(active)}
-        {tab.badge && !active && (
-          <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-pink-500 ring-2 ring-white" />
+        {showBadge && (
+          <span
+            className="absolute -top-1.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold leading-none flex items-center justify-center ring-2 ring-white tabular-nums animate-badge-pop"
+            aria-label={`${badgeCount} okunmamış bildirim`}
+          >
+            {badgeCount > 99 ? '99+' : badgeCount}
+          </span>
         )}
       </span>
       <span className={`text-[10px] font-semibold tracking-wide truncate max-w-full px-0.5 ${
@@ -78,7 +84,8 @@ function NavItem({ tab, active, accent, onSelect }) {
 
 export function BottomNav({ accountOpen, onAccountOpen }) {
   const { theme } = useBranch();
-  const { mainTab, setMainTab } = useApp();  const accent = theme.accentSolid;
+  const { mainTab, setMainTab, unreadAnnouncementCount } = useApp();
+  const accent = theme.accentSolid;
 
   return (
     <nav
@@ -86,7 +93,7 @@ export function BottomNav({ accountOpen, onAccountOpen }) {
       aria-label="Ana menü"
     >
       <div
-        className="pointer-events-auto relative mx-3 mb-[max(0.65rem,env(safe-area-inset-bottom))] rounded-[1.65rem] bg-white border border-slate-200/90 shadow-[0_-8px_40px_rgba(15,23,42,0.08),0_16px_40px_rgba(15,23,42,0.06)]"
+        className="pointer-events-auto relative mx-3 mb-[max(0.65rem,env(safe-area-inset-bottom))] rounded-[1.65rem] bg-white/92 backdrop-blur-md border border-white/90 shadow-float"
         style={{ height: '4.25rem' }}
       >
         <div className="grid grid-cols-5 h-full items-end pb-1.5">
@@ -109,6 +116,9 @@ export function BottomNav({ accountOpen, onAccountOpen }) {
               active={mainTab === tab.id}
               accent={accent}
               onSelect={setMainTab}
+              badgeCount={
+                tab.id === MAIN_TABS.NOTIFICATIONS ? unreadAnnouncementCount : 0
+              }
             />
           ))}
         </div>
@@ -116,7 +126,7 @@ export function BottomNav({ accountOpen, onAccountOpen }) {
         <button
           type="button"
           onClick={onAccountOpen}
-          className="absolute left-1/2 -translate-x-1/2 -top-7 w-[3.75rem] h-[3.75rem] rounded-full flex items-center justify-center active:scale-[0.96] transition-transform shadow-[0_12px_32px_-8px_rgba(15,23,42,0.35)] ring-[3px] ring-white"
+          className="absolute left-1/2 -translate-x-1/2 -top-7 w-[3.75rem] h-[3.75rem] rounded-full flex items-center justify-center active:scale-[0.94] transition-all duration-ui ease-premium shadow-float ring-[3px] ring-white"
           style={{
             background: `linear-gradient(145deg, ${accent} 0%, ${accent}cc 100%)`,
           }}
@@ -126,7 +136,8 @@ export function BottomNav({ accountOpen, onAccountOpen }) {
           <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.25}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-        </button>      </div>
+        </button>
+      </div>
     </nav>
   );
 }

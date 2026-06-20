@@ -3,6 +3,7 @@ import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { BOTTOM_NAV_PADDING } from '../../constants/nav';
 import { MAKARA_HAVZAN_ZONES } from '../../config/firebase';
+import { TableSectionSkeleton } from '../ui/Skeleton';
 
 const ZONE_FRAME = {
   pink: {
@@ -40,16 +41,16 @@ function TableButton({ table, onSelect, isSultan }) {
   return (
     <button
       onClick={() => onSelect(table)}
-      className={`aspect-square rounded-2xl border-2 font-bold transition-all active:scale-95 flex flex-col items-center justify-center p-1 relative ${
+      className={`aspect-square rounded-2xl border-2 font-bold transition-all duration-ui ease-premium active:scale-[0.96] flex flex-col items-center justify-center p-1 relative ${
         hasOrder
-          ? 'border-emerald-600 bg-gradient-to-br from-emerald-800 to-emerald-950 text-emerald-50 shadow-lg shadow-emerald-900/30'
+          ? 'border-emerald-500/80 bg-gradient-to-br from-emerald-800 to-emerald-950 text-emerald-50 shadow-lg shadow-emerald-900/30 animate-table-glow'
           : isSultan
-          ? 'border-gray-200 bg-white text-gray-700 hover:border-emerald-300'
+          ? 'border-slate-200/90 bg-white/90 text-slate-700 hover:border-emerald-300 shadow-card'
           : isGarden
-          ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-900'
+          ? 'border-emerald-300/80 bg-gradient-to-br from-emerald-50/90 to-teal-50/80 text-emerald-900 shadow-card'
           : isOutside
-          ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-yellow-100 text-amber-900'
-          : 'border-pink-200 bg-gradient-to-br from-pink-50 to-fuchsia-50 text-pink-900'
+          ? 'border-amber-300/80 bg-gradient-to-br from-amber-50/90 to-yellow-100/80 text-amber-900 shadow-card'
+          : 'border-pink-200/80 bg-gradient-to-br from-pink-50/90 to-fuchsia-50/80 text-pink-900 shadow-card'
       }`}
     >
       {hasOrder && (
@@ -63,7 +64,7 @@ function TableButton({ table, onSelect, isSultan }) {
               {table.name}
             </span>
           )}
-          <span className="text-[10px] font-semibold text-emerald-300 mt-1 px-1.5 py-0.5 rounded bg-emerald-900/40">
+          <span className="text-[10px] font-semibold text-emerald-300 mt-1 px-1.5 py-0.5 rounded bg-emerald-900/40 tabular-nums">
             {orderTotal.toFixed(2)} ₺
           </span>
         </>
@@ -74,11 +75,14 @@ function TableButton({ table, onSelect, isSultan }) {
   );
 }
 
-function TableSectionGroup({ title, rangeLabel, count, accent, children }) {
+function TableSectionGroup({ title, rangeLabel, count, accent, children, staggerIndex = 0 }) {
   const frame = ZONE_FRAME[accent] || ZONE_FRAME.pink;
 
   return (
-    <section className={`rounded-2xl border-2 p-3.5 mb-5 ${frame.section}`}>
+    <section
+      className={`rounded-2xl border-2 p-3.5 mb-5 animate-stagger-in opacity-0 ${frame.section}`}
+      style={{ animationDelay: `${staggerIndex * 80}ms` }}
+    >
       <div className="flex items-center gap-2.5 mb-3.5 px-0.5">
         <span className={`w-2 h-2 rounded-full shrink-0 ${frame.dot}`} aria-hidden />
         <div className="flex-1 min-w-0">
@@ -196,8 +200,9 @@ export function TableScreen() {
 
   if (loading && !tables.length) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin" />
+      <div className="px-4" style={{ paddingBottom: BOTTOM_NAV_PADDING }}>
+        <TableSectionSkeleton />
+        <TableSectionSkeleton title={false} />
       </div>
     );
   }
@@ -224,13 +229,14 @@ export function TableScreen() {
         renderGrid(displayTables)
       ) : isHavzan ? (
         <>
-          {havzanZones.map((zone) => (
+          {havzanZones.map((zone, index) => (
             <TableSectionGroup
               key={zone.key}
               title={zone.label}
               rangeLabel={`${zone.min}–${zone.max}`}
               count={zone.tables.length}
               accent={zone.accent}
+              staggerIndex={index}
             >
               {renderGrid(zone.tables)}
             </TableSectionGroup>
@@ -241,6 +247,7 @@ export function TableScreen() {
               rangeLabel="Gel-Al"
               count={packageTables.length}
               accent="purple"
+              staggerIndex={havzanZones.length}
             >
               {renderGrid(packageTables)}
             </TableSectionGroup>
@@ -253,6 +260,7 @@ export function TableScreen() {
               title="İç Mekan"
               count={insideTables.length}
               accent="pink"
+              staggerIndex={0}
             >
               {renderGrid(insideTables)}
             </TableSectionGroup>
@@ -262,6 +270,7 @@ export function TableScreen() {
               title="Dış Mekan"
               count={outsideTables.length}
               accent="amber"
+              staggerIndex={1}
             >
               {renderGrid(outsideTables)}
             </TableSectionGroup>
@@ -271,6 +280,7 @@ export function TableScreen() {
               title="Paket"
               count={packageTables.length}
               accent="purple"
+              staggerIndex={2}
             >
               {renderGrid(packageTables)}
             </TableSectionGroup>
@@ -279,9 +289,11 @@ export function TableScreen() {
       )}
 
       {!tables.length && !loading && (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-4xl mb-3">🪑</p>
-          <p>Masa bulunamadı</p>
+        <div className="text-center py-16">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/80 border border-slate-100 shadow-card mb-3">
+            <span className="text-2xl" aria-hidden>🪑</span>
+          </div>
+          <p className="text-slate-500 font-medium">Masa bulunamadı</p>
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import {
   subscribeTableOrderItems,
   submitMobileOrder,
   setStaffPresenceViewingTable,
+  subscribeStaffAnnouncements,
 } from '../services/firebaseService';
 import { resolveProductImages } from '../services/productImageCache';
 import { getCatalogCache, setCatalogCache } from '../services/catalogCache';
@@ -15,6 +16,12 @@ import { YAN_URUNLER_CATEGORY_ID } from '../config/branch';
 import { MAIN_TABS } from '../constants/nav';
 import { useBranch } from './BranchContext';
 import { useAuth } from './AuthContext';
+import { hapticLight } from '../utils/haptic';
+import {
+  countUnreadAnnouncements,
+  getLastNotificationsVisit,
+  markNotificationsVisited,
+} from '../utils/announcementUnread';
 
 import { ToastOverlay } from '../components/ui/Toast';
 
@@ -38,8 +45,11 @@ export function AppProvider({ children }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [cartBump, setCartBump] = useState(0);
+  const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const tablesUnsubRef = useRef(null);
   const orderItemsUnsubRef = useRef(null);
+  const mainTabRef = useRef(mainTab);
   const backHandlersRef = useRef([]);
 
   const registerBackHandler = useCallback((id, handler) => {
@@ -144,6 +154,34 @@ export function AppProvider({ children }) {
   }, [configured, branchKey]);
 
   useEffect(() => {
+    mainTabRef.current = mainTab;
+  }, [mainTab]);
+
+  useEffect(() => {
+    if (!configured || !branchKey || !staff?.id) {
+      setUnreadAnnouncementCount(0);
+      return undefined;
+    }
+
+    const updateUnread = (list) => {
+      if (mainTabRef.current === MAIN_TABS.NOTIFICATIONS) {
+        setUnreadAnnouncementCount(0);
+        return;
+      }
+      const lastVisit = getLastNotificationsVisit(branchKey, staff.id);
+      setUnreadAnnouncementCount(countUnreadAnnouncements(list, staff.id, lastVisit));
+    };
+
+    return subscribeStaffAnnouncements(branchKey, updateUnread);
+  }, [configured, branchKey, staff?.id]);
+
+  useEffect(() => {
+    if (mainTab !== MAIN_TABS.NOTIFICATIONS || !branchKey || !staff?.id) return;
+    markNotificationsVisited(branchKey, staff.id);
+    setUnreadAnnouncementCount(0);
+  }, [mainTab, branchKey, staff?.id]);
+
+  useEffect(() => {
     if (!staff) return;
     if (screen === 'order' && selectedTable) {
       const tableName =
@@ -212,6 +250,8 @@ export function AppProvider({ children }) {
 
   const addToCart = useCallback((product, options = {}) => {
     const { isGift = false, extraNote = '', quantity = 1 } = options;
+    hapticLight();
+    setCartBump((n) => n + 1);
     setCart((prev) => {
       const existing = prev.find(
         (i) => i.id === product.id && i.isGift === isGift && (i.extraNote || '') === (extraNote || '')
@@ -287,6 +327,7 @@ export function AppProvider({ children }) {
       value={{
         screen, setScreen,
         mainTab, setMainTab,
+        unreadAnnouncementCount,
         tables, setTables,
         categories, products,
         selectedTable, setSelectedTable,
@@ -300,7 +341,7 @@ export function AppProvider({ children }) {
         loadData, bootstrapCatalog, loadExistingOrders,
         selectTable, goBackToTables,
         addToCart, updateCartItem, removeFromCart, clearCart,
-        sendOrder, cartTotal, cartCount,
+        sendOrder, cartTotal, cartCount, cartBump,
         optimisticallyCancelOrderItem,
         registerBackHandler, runBackHandlers,
       }}

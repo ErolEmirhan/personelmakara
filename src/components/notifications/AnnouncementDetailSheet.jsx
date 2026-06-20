@@ -8,10 +8,20 @@ import { useBackHandler } from '../../hooks/useBackButton';
 import {
   addAnnouncementComment,
   deleteStaffAnnouncement,
+  fetchBranchStaff,
+  markAnnouncementRead,
   subscribeAnnouncementComments,
+  subscribeAnnouncementLikes,
+  subscribeAnnouncementReads,
+  toggleAnnouncementLike,
 } from '../../services/firebaseService';
 import { formatLastSeen } from '../../utils/formatLastSeen';
 import { canSendStaffAnnouncements } from '../../utils/staffRole';
+import { hapticLight } from '../../utils/haptic';
+import { AnnouncementReadReceipts } from './AnnouncementReadReceipts';
+import { AnnouncementLikeReceipts } from './AnnouncementLikeReceipts';
+import { AnnouncementLikeButton } from './AnnouncementLikeButton';
+import { AnnouncementRichText } from './AnnouncementRichText';
 
 function buildCommentThreads(comments) {
   const topLevel = [];
@@ -35,7 +45,7 @@ function buildCommentThreads(comments) {
   }));
 }
 
-function CommentBubble({ comment, accent, compact = false }) {
+function CommentBubble({ comment, accent, accentSolid, onMentionNavigate, compact = false }) {
   const timeLabel = comment.createdAtMs ? formatLastSeen(comment.createdAtMs) : '';
 
   return (
@@ -74,7 +84,11 @@ function CommentBubble({ comment, accent, compact = false }) {
           </p>
         )}
         <p className="text-sm text-slate-600 mt-0.5 leading-relaxed whitespace-pre-wrap break-words">
-          {comment.text}
+          <AnnouncementRichText
+            text={comment.text}
+            accentSolid={accentSolid}
+            onMentionNavigate={onMentionNavigate}
+          />
         </p>
       </div>
     </div>
@@ -93,16 +107,29 @@ function CommentThread({
   onCancelReply,
   onReplyTextChange,
   onSendReply,
+  onMentionNavigate,
 }) {
   const isReplying = replyTargetId === thread.id;
 
   return (
     <div className="py-1">
-      <CommentBubble comment={thread} accent={accent} />
+      <CommentBubble
+        comment={thread}
+        accent={accent}
+        accentSolid={accentSolid}
+        onMentionNavigate={onMentionNavigate}
+      />
       {thread.replies.length > 0 && (
         <div className="ml-8 pl-3 border-l-2 border-slate-100 space-y-0.5">
           {thread.replies.map((reply) => (
-            <CommentBubble key={reply.id} comment={reply} accent={accent} compact />
+            <CommentBubble
+              key={reply.id}
+              comment={reply}
+              accent={accent}
+              accentSolid={accentSolid}
+              onMentionNavigate={onMentionNavigate}
+              compact
+            />
           ))}
         </div>
       )}
@@ -163,10 +190,18 @@ function CommentThread({
 
 export function AnnouncementDetailSheet({ announcement, open, onClose }) {
   const { staff } = useAuth();
-  const { theme } = useBranch();
+  const { theme, branchKey } = useBranch();
   const { showToast } = useApp();
   const [comments, setComments] = useState([]);
+  const [reads, setReads] = useState([]);
+  const [likes, setLikes] = useState([]);
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [togglingLike, setTogglingLike] = useState(false);
   const [loadingComments, setLoadingComments] = useState(true);
+  const [loadingReads, setLoadingReads] = useState(false);
+  const [loadingLikes, setLoadingLikes] = useState(false);
+  const [totalStaff, setTotalStaff] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState(null);
@@ -186,11 +221,19 @@ export function AnnouncementDetailSheet({ announcement, open, onClose }) {
   useEffect(() => {
     if (!open || !announcement?.id) {
       setComments([]);
+      setReads([]);
+      setLikes([]);
+      setLiked(false);
+      setLikeCount(0);
       setLoadingComments(true);
+      setLoadingReads(false);
+      setLoadingLikes(false);
+      setTotalStaff(null);
       setReplyTarget(null);
       setReplyText('');
       return undefined;
     }
+    setLikeCount(announcement.likeCount || 0);
     setLoadingComments(true);
     const unsub = subscribeAnnouncementComments(announcement.id, (list) => {
       setComments(list);
@@ -198,6 +241,70 @@ export function AnnouncementDetailSheet({ announcement, open, onClose }) {
     });
     return unsub;
   }, [open, announcement?.id]);
+
+  useEffect(() => {
+    if (!open || !announcement?.id || !staff) return undefined;
+    markAnnouncementRead(announcement.id, staff, announcement.authorStaffId).catch(() => {});
+    return undefined;
+  }, [open, announcement?.id, announcement?.authorStaffId, staff]);
+
+  useEffect(() => {
+    if (!open || !announcement?.id || !isAuthor) {
+      setReads([]);
+      setLoadingReads(false);
+      return undefined;
+    }
+    setLoadingReads(true);
+    const unsub = subscribeAnnouncementReads(announcement.id, (list) => {
+      setReads(list);
+      setLoadingReads(false);
+    });
+    return unsub;
+  }, [open, announcement?.id, isAuthor]);
+
+  useEffect(() => {
+    if (!open || !isAuthor || !branchKey || !announcement?.authorStaffId) {
+      setTotalStaff(null);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchBranchStaff(branchKey)
+      .then((list) => {
+        if (cancelled) return;
+        const eligible = list.filter(
+          (s) => String(s.id) !== String(announcement.authorStaffId)
+        ).length;
+        setTotalStaff(eligible);
+      })
+      .catch(() => {
+        if (!cancelled) setTotalStaff(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isAuthor, branchKey, announcement?.authorStaffId]);
+
+  useEffect(() => {
+    if (!open || !announcement?.id) {
+      setLikes([]);
+      setLoadingLikes(false);
+      return undefined;
+    }
+    setLoadingLikes(true);
+    const unsub = subscribeAnnouncementLikes(announcement.id, (list) => {
+      setLikes(list);
+      setLoadingLikes(false);
+      if (staff) {
+        setLiked(list.some((l) => String(l.staffId) === String(staff.id)));
+      }
+    });
+    return unsub;
+  }, [open, announcement?.id, staff]);
+
+  useEffect(() => {
+    if (!open || !announcement?.id) return undefined;
+    setLikeCount(announcement.likeCount || 0);
+  }, [open, announcement?.id, announcement?.likeCount]);
 
   useEffect(() => {
     if (!open || loadingComments) return undefined;
@@ -248,6 +355,26 @@ export function AnnouncementDetailSheet({ announcement, open, onClose }) {
       showToast('error', 'Hata', err.message || 'Yanıt gönderilemedi');
     } finally {
       setSendingReply(false);
+    }
+  };
+
+  const handleToggleLike = async () => {
+    if (!staff || !announcement?.id || togglingLike) return;
+    setTogglingLike(true);
+    const prevLiked = liked;
+    const prevCount = likeCount;
+    setLiked(!prevLiked);
+    setLikeCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
+    try {
+      const result = await toggleAnnouncementLike(announcement.id, staff);
+      setLiked(result.liked);
+      hapticLight();
+    } catch (err) {
+      setLiked(prevLiked);
+      setLikeCount(prevCount);
+      showToast('error', 'Hata', err.message || 'Beğeni kaydedilemedi');
+    } finally {
+      setTogglingLike(false);
     }
   };
 
@@ -339,10 +466,44 @@ export function AnnouncementDetailSheet({ announcement, open, onClose }) {
                 </h2>
               )}
               <p className="text-sm text-slate-700 mt-2 leading-relaxed whitespace-pre-wrap">
-                {announcement.message}
+                <AnnouncementRichText
+                  text={announcement.message}
+                  accentSolid={accentSolid}
+                  onMentionNavigate={onClose}
+                />
               </p>
+              {staff && (
+                <div className="mt-3">
+                  <AnnouncementLikeButton
+                    liked={liked}
+                    likeCount={likeCount}
+                    toggling={togglingLike}
+                    onToggle={handleToggleLike}
+                    accentSolid={accentSolid}
+                  />
+                </div>
+              )}
             </div>
           </div>
+
+          {isAuthor && (
+            <AnnouncementLikeReceipts
+              likes={likes}
+              loading={loadingLikes}
+              accent={theme.accent}
+              accentSolid={accentSolid}
+            />
+          )}
+
+          {isAuthor && (
+            <AnnouncementReadReceipts
+              reads={reads}
+              loading={loadingReads}
+              totalStaff={totalStaff}
+              accent={theme.accent}
+              accentSolid={accentSolid}
+            />
+          )}
 
           <div className="pt-3">
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 mb-2">
@@ -378,6 +539,7 @@ export function AnnouncementDetailSheet({ announcement, open, onClose }) {
                     }}
                     onReplyTextChange={setReplyText}
                     onSendReply={handleSendReply}
+                    onMentionNavigate={onClose}
                   />
                 ))}
               </div>

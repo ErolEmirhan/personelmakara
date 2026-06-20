@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useBranch } from '../../context/BranchContext';
 
 function PlaceholderArt({ accentSolid }) {
@@ -29,20 +30,28 @@ function PlaceholderArt({ accentSolid }) {
 
 export function ProductCard({ product, onAdd }) {
   const { theme } = useBranch();
+  const [justAdded, setJustAdded] = useState(false);
   const outOfStock = product.trackStock && product.stock <= 0;
   const lowStock = product.trackStock && product.stock > 0 && product.stock <= 5;
   const imageSrc = product.imageSrc || null;
   const price = Number(product.price).toFixed(2);
 
+  const handleAdd = () => {
+    if (outOfStock) return;
+    setJustAdded(true);
+    window.setTimeout(() => setJustAdded(false), 450);
+    onAdd(product);
+  };
+
   return (
     <button
       type="button"
-      onClick={() => !outOfStock && onAdd(product)}
+      onClick={handleAdd}
       disabled={outOfStock}
-      className={`group relative flex flex-col w-full rounded-[1.35rem] bg-white overflow-hidden text-left transition-all duration-300 border border-gray-100/90 shadow-[0_4px_24px_rgba(15,23,42,0.06)] disabled:cursor-not-allowed ${
+      className={`group relative flex flex-col w-full rounded-[1.35rem] bg-white overflow-hidden text-left transition-all duration-ui ease-premium border border-slate-100/90 shadow-card disabled:cursor-not-allowed ${
         outOfStock
           ? 'opacity-75'
-          : 'active:scale-[0.98] hover:shadow-[0_8px_32px_rgba(15,23,42,0.1)] hover:border-gray-200/90'
+          : 'active:scale-[0.98] hover:shadow-card-hover hover:border-slate-200/90'
       }`}
       aria-label={`${product.name} — ${price} ₺`}
     >
@@ -85,7 +94,9 @@ export function ProductCard({ product, onAdd }) {
 
         {!outOfStock && (
           <span
-            className={`absolute bottom-2.5 right-2.5 z-[2] w-9 h-9 rounded-full bg-gradient-to-br ${theme.accent} text-white shadow-lg shadow-black/20 flex items-center justify-center ring-2 ring-white/90 transition-transform duration-200 group-active:scale-90`}
+            className={`absolute bottom-2.5 right-2.5 z-[2] w-9 h-9 rounded-full bg-gradient-to-br ${theme.accent} text-white shadow-lg shadow-black/20 flex items-center justify-center ring-2 ring-white/90 transition-transform duration-ui ease-premium group-active:scale-90 ${
+              justAdded ? 'animate-add-pulse' : ''
+            }`}
             aria-hidden
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -103,7 +114,7 @@ export function ProductCard({ product, onAdd }) {
         <div className="flex items-end justify-between gap-2 mt-auto">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Fiyat</p>
-            <p className="text-lg font-display font-bold leading-none">
+            <p className="text-lg font-display font-bold leading-none tabular-nums">
               <span className={`bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
                 {price}
               </span>

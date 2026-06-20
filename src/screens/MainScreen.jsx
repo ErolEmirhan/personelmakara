@@ -19,6 +19,8 @@ import { NotificationsScreen } from './NotificationsScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
 import { IncomingPushBanner } from '../components/notifications/IncomingPushBanner';
+import { BranchSurface } from '../components/ui/BranchSurface';
+import { ScreenTransition } from '../components/ui/ScreenTransition';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
 import { shouldShowBroadcast } from '../utils/notificationPrefs';
@@ -141,7 +143,11 @@ export function MainScreen() {
 
   const renderContent = () => {
     if (mainTab === MAIN_TABS.TABLES) {
-      return screen === 'tables' ? <TableScreen /> : <OrderScreen />;
+      return (
+        <ScreenTransition screenKey={screen}>
+          {screen === 'tables' ? <TableScreen /> : <OrderScreen />}
+        </ScreenTransition>
+      );
     }
     if (mainTab === MAIN_TABS.ORDERS) return <OrdersScreen />;
     if (mainTab === MAIN_TABS.NOTIFICATIONS) return <NotificationsScreen />;
@@ -150,7 +156,8 @@ export function MainScreen() {
   };
 
   return (
-    <div className={`min-h-dvh bg-gray-50 ${theme.isSultan ? 'theme-sultan' : ''}`}>
+    <div className={`relative min-h-dvh ${theme.isSultan ? 'theme-sultan' : ''}`}>
+      <BranchSurface />
       <AppHeader />
       {incomingPush && (
         <IncomingPushBanner

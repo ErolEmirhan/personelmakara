@@ -18,12 +18,12 @@ html {
   -ms-touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  background-color: #f5f3ff;
+  background-color: var(--surface-base, #f8fafc);
 }
 
 body {
   font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  background: #f5f3ff;
+  background: var(--surface-base, #f8fafc);
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
@@ -76,5 +76,17 @@ select {
   }
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400;
+  }
+  .surface-card {
+    @apply bg-white/90 backdrop-blur-sm border border-white/80 shadow-card;
+  }
+  .focus-accent {
+    @apply focus:outline-none focus:border-[color:var(--accent-solid)] focus:ring-2 focus:ring-[color:var(--accent-ring)];
+  }
+  .ease-premium {
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }

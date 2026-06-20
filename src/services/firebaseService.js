@@ -756,7 +756,41 @@ function mapStaffAnnouncement(docSnap) {
     authorIsBoss: !!data.authorIsBoss,
     authorIsChef: !!data.authorIsChef,
     commentCount: data.commentCount || 0,
+    readCount: data.readCount || 0,
+    likeCount: data.likeCount || 0,
     createdAtMs: timestampToMs(data.createdAt),
+  };
+}
+
+function mapAnnouncementLike(docSnap) {
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    staffId: data.staffId,
+    staffName: data.staffName || '',
+    staffSurname: data.staffSurname || '',
+    profileImageSrc: data.profileImageSrc || null,
+    isManager: !!data.isManager,
+    isAdmin: !!data.isAdmin,
+    isBoss: !!data.isBoss,
+    isChef: !!data.isChef,
+    likedAtMs: timestampToMs(data.likedAt),
+  };
+}
+
+function mapAnnouncementRead(docSnap) {
+  const data = docSnap.data();
+  return {
+    id: docSnap.id,
+    staffId: data.staffId,
+    staffName: data.staffName || '',
+    staffSurname: data.staffSurname || '',
+    profileImageSrc: data.profileImageSrc || null,
+    isManager: !!data.isManager,
+    isAdmin: !!data.isAdmin,
+    isBoss: !!data.isBoss,
+    isChef: !!data.isChef,
+    readAtMs: timestampToMs(data.readAt),
   };
 }
 
@@ -805,6 +839,8 @@ export async function createStaffAnnouncement(branchKey, staff, { title, message
     authorIsBoss: !!staff.is_boss,
     authorIsChef: !!staff.is_chef,
     commentCount: 0,
+    readCount: 0,
+    likeCount: 0,
     createdAt: serverTimestamp(),
   });
   return { success: true, id: docRef.id };
@@ -849,6 +885,114 @@ export function subscribeAnnouncementComments(announcementId, onUpdate) {
       onUpdate([]);
     }
   );
+}
+
+export function subscribeAnnouncementReads(announcementId, onUpdate) {
+  if (!isFirebaseReady() || !announcementId) return () => {};
+  const db = requireMainDb();
+  const q = query(collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'reads'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map(mapAnnouncementRead);
+      list.sort((a, b) => (b.readAtMs || 0) - (a.readAtMs || 0));
+      onUpdate(list);
+    },
+    (err) => {
+      console.error('announcement reads snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export async function markAnnouncementRead(announcementId, staff, authorStaffId) {
+  if (!announcementId || !staff?.id) return { success: false, skipped: true };
+  if (authorStaffId != null && String(staff.id) === String(authorStaffId)) {
+    return { success: false, skipped: true };
+  }
+
+  const db = requireMainDb();
+  const readRef = doc(db, STAFF_ANNOUNCEMENTS, announcementId, 'reads', String(staff.id));
+  const existing = await getDoc(readRef);
+  if (existing.exists()) return { success: true, alreadyRead: true };
+
+  const announcementRef = doc(db, STAFF_ANNOUNCEMENTS, announcementId);
+  await setDoc(readRef, {
+    staffId: staff.id,
+    staffName: staff.name || '',
+    staffSurname: staff.surname || '',
+    profileImageSrc: staff.profileImageSrc || null,
+    isManager: !!staff.is_manager,
+    isAdmin: !!staff.is_admin,
+    isBoss: !!staff.is_boss,
+    isChef: !!staff.is_chef,
+    readAt: serverTimestamp(),
+  });
+  await updateDoc(announcementRef, { readCount: increment(1) });
+
+  return { success: true };
+}
+
+export function subscribeAnnouncementLikes(announcementId, onUpdate) {
+  if (!isFirebaseReady() || !announcementId) return () => {};
+  const db = requireMainDb();
+  const q = query(collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'likes'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map(mapAnnouncementLike);
+      list.sort((a, b) => (b.likedAtMs || 0) - (a.likedAtMs || 0));
+      onUpdate(list);
+    },
+    (err) => {
+      console.error('announcement likes snapshot error:', err);
+      onUpdate([]);
+    }
+  );
+}
+
+export async function fetchMyLikedAnnouncementIds(announcementIds, staffId) {
+  if (!isFirebaseReady() || !staffId || !announcementIds?.length) return {};
+  const db = requireMainDb();
+  const entries = await Promise.all(
+    announcementIds.map(async (id) => {
+      const snap = await getDoc(
+        doc(db, STAFF_ANNOUNCEMENTS, id, 'likes', String(staffId))
+      );
+      return [id, snap.exists()];
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
+export async function toggleAnnouncementLike(announcementId, staff) {
+  if (!announcementId || !staff?.id) throw new Error('Oturum gerekli');
+
+  const db = requireMainDb();
+  const likeRef = doc(db, STAFF_ANNOUNCEMENTS, announcementId, 'likes', String(staff.id));
+  const announcementRef = doc(db, STAFF_ANNOUNCEMENTS, announcementId);
+  const existing = await getDoc(likeRef);
+
+  if (existing.exists()) {
+    await deleteDoc(likeRef);
+    await updateDoc(announcementRef, { likeCount: increment(-1) });
+    return { liked: false };
+  }
+
+  await setDoc(likeRef, {
+    staffId: staff.id,
+    staffName: staff.name || '',
+    staffSurname: staff.surname || '',
+    profileImageSrc: staff.profileImageSrc || null,
+    isManager: !!staff.is_manager,
+    isAdmin: !!staff.is_admin,
+    isBoss: !!staff.is_boss,
+    isChef: !!staff.is_chef,
+    likedAt: serverTimestamp(),
+  });
+  await updateDoc(announcementRef, { likeCount: increment(1) });
+
+  return { liked: true };
 }
 
 export async function addAnnouncementComment(announcementId, staff, text, options = {}) {
@@ -905,8 +1049,19 @@ export async function deleteStaffAnnouncement(announcementId, staff) {
   const commentsSnap = await getDocs(
     collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'comments')
   );
+  const readsSnap = await getDocs(
+    collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'reads')
+  );
+  const likesSnap = await getDocs(
+    collection(db, STAFF_ANNOUNCEMENTS, announcementId, 'likes')
+  );
 
-  const refs = [...commentsSnap.docs.map((d) => d.ref), announcementRef];
+  const refs = [
+    ...commentsSnap.docs.map((d) => d.ref),
+    ...readsSnap.docs.map((d) => d.ref),
+    ...likesSnap.docs.map((d) => d.ref),
+    announcementRef,
+  ];
   for (let i = 0; i < refs.length; i += 500) {
     const batch = writeBatch(db);
     refs.slice(i, i + 500).forEach((ref) => batch.delete(ref));

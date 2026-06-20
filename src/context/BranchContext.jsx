@@ -43,6 +43,16 @@ export function BranchProvider({ children }) {
     selectBranch(key);
   }, [savedKey, selectBranch]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--accent-solid', theme.accentSolid);
+    root.style.setProperty('--accent-light', theme.accentLight);
+    root.style.setProperty('--accent-muted', theme.accentMuted);
+    root.style.setProperty('--accent-ring', `${theme.accentSolid}33`);
+    root.style.setProperty('--surface-base', theme.accentLight);
+    root.dataset.branch = branchKey || savedKey || 'makara';
+  }, [theme, branchKey, savedKey]);
+
   return (
     <BranchContext.Provider
       value={{

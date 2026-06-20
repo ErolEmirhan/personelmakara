@@ -68,6 +68,8 @@ export function StaffAnnouncementComposer({ branchKey, staff, theme, showToast }
     <div className="space-y-3">
       <p className="text-xs text-slate-500 leading-relaxed">
         Gönderdiğiniz bildirim uygulamada görünür; izin veren personelin telefonuna push gider.
+        Kimin gördüğünü Bildirimler sekmesinden takip edebilirsiniz.
+        Mesajda <span className="font-semibold text-violet-600">@destek</span> yazarsanız personel tıklayınca Destek ekranına gider.
       </p>
       <label className="block">
         <span className="text-xs font-semibold text-slate-500">Başlık (isteğe bağlı)</span>
