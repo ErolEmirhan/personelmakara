@@ -268,6 +268,20 @@ export function AppProvider({ children }) {
   const cartTotal = cart.reduce((sum, i) => sum + (i.isGift ? 0 : i.price * i.quantity), 0);
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
+  const optimisticallyCancelOrderItem = useCallback((itemId, cancelQty) => {
+    setCurrentOrderItems((prev) => {
+      const target = prev.find((i) => i.id === itemId);
+      if (!target) return prev;
+      const qty = Math.max(1, Math.min(cancelQty, target.quantity || 1));
+      if (qty >= target.quantity) {
+        return prev.filter((i) => i.id !== itemId);
+      }
+      return prev.map((i) =>
+        i.id === itemId ? { ...i, quantity: i.quantity - qty } : i
+      );
+    });
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -287,6 +301,7 @@ export function AppProvider({ children }) {
         selectTable, goBackToTables,
         addToCart, updateCartItem, removeFromCart, clearCart,
         sendOrder, cartTotal, cartCount,
+        optimisticallyCancelOrderItem,
         registerBackHandler, runBackHandlers,
       }}
     >

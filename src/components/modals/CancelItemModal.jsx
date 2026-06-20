@@ -10,7 +10,6 @@ async function cancelOrderItems({
   staff,
   cancelQty,
   reason,
-  onProgress,
 }) {
   const base = {
     type: 'cancel_item',
@@ -36,7 +35,6 @@ async function cancelOrderItems({
 
   let lastResult = null;
   for (let i = 0; i < cancelQty; i += 1) {
-    onProgress?.(i + 1, cancelQty);
     lastResult = await submitAndWaitMobileAction({
       ...base,
       cancelQuantity: 1,
@@ -53,11 +51,9 @@ async function cancelOrderItems({
 
 export function CancelItemModal({ open, item, tableId, onClose }) {
   const { staff } = useAuth();
-  const { showToast } = useApp();
+  const { showToast, optimisticallyCancelOrderItem, loadExistingOrders } = useApp();
   const [reason, setReason] = useState('');
   const [cancelQty, setCancelQty] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(null);
   const [inlineError, setInlineError] = useState('');
 
   const maxQty = item?.quantity || 1;
@@ -67,11 +63,10 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
       setCancelQty(item.quantity);
       setReason('');
       setInlineError('');
-      setProgress(null);
     }
   }, [open, item?.id, item?.quantity]);
 
-  const handleCancel = async () => {
+  const handleCancel = () => {
     if (!item || !tableId || !staff) return;
     const trimmed = reason.trim();
     if (!trimmed) {
@@ -84,55 +79,43 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
       return;
     }
 
-    setInlineError('');
-    setLoading(true);
-    setProgress(null);
+    const itemSnapshot = { ...item };
+    const qty = cancelQty;
 
-    try {
-      const res = await cancelOrderItems({
-        item,
-        tableId,
-        staff,
-        cancelQty,
-        reason: trimmed,
-        onProgress: (current, total) => {
-          if (total > 1) setProgress({ current, total });
-        },
-      });
+    optimisticallyCancelOrderItem(item.id, qty);
+    setReason('');
+    onClose();
 
-      if (res.success) {
-        const label = cancelQty === maxQty
-          ? 'Ürün iptal edildi'
-          : `${cancelQty} adet iptal edildi`;
-        showToast('success', 'İptal', label);
-        setReason('');
-        onClose();
-        return;
+    const label = qty === maxQty ? 'Ürün iptal edildi' : `${qty} adet iptal edildi`;
+    showToast('success', 'İptal', label);
+
+    void (async () => {
+      try {
+        const res = await cancelOrderItems({
+          item: itemSnapshot,
+          tableId,
+          staff,
+          cancelQty: qty,
+          reason: trimmed,
+        });
+
+        if (res.success) return;
+
+        if (res.partialCount > 0) {
+          showToast(
+            'error',
+            'Kısmi iptal',
+            `${res.partialCount} adet iptal edildi; devam edilemedi: ${res.error || 'Bilinmeyen hata'}`
+          );
+        } else {
+          showToast('error', 'İptal başarısız', res.error || 'Kasa işlemi tamamlanamadı');
+        }
+        loadExistingOrders(tableId);
+      } catch (err) {
+        showToast('error', 'İptal başarısız', err.message || 'Bağlantı hatası');
+        loadExistingOrders(tableId);
       }
-
-      if (res.partialCount > 0) {
-        const msg = `${res.partialCount} adet iptal edildi; devam edilemedi: ${res.error || 'Bilinmeyen hata'}`;
-        setInlineError(msg);
-        showToast('error', 'Kısmi iptal', msg);
-        onClose();
-        return;
-      }
-
-      if (res.requiresReason) {
-        setInlineError(res.error || 'İptal açıklaması girin');
-        showToast('error', 'Gerekli', res.error || 'İptal açıklaması girin');
-      } else {
-        setInlineError(res.error || 'İptal edilemedi');
-        showToast('error', 'Hata', res.error || 'İptal edilemedi');
-      }
-    } catch (err) {
-      const msg = err.message || 'Bağlantı hatası';
-      setInlineError(msg);
-      showToast('error', 'Hata', msg);
-    } finally {
-      setLoading(false);
-      setProgress(null);
-    }
+    })();
   };
 
   if (!item) return null;
@@ -157,7 +140,7 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
             <button
               type="button"
               onClick={() => setCancelQty((q) => Math.max(1, q - 1))}
-              disabled={loading || cancelQty <= 1}
+              disabled={cancelQty <= 1}
               className="w-10 h-10 rounded-xl bg-white border border-gray-200 font-bold text-lg disabled:opacity-40 active:bg-gray-100"
               aria-label="Azalt"
             >
@@ -170,7 +153,7 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
             <button
               type="button"
               onClick={() => setCancelQty((q) => Math.min(maxQty, q + 1))}
-              disabled={loading || cancelQty >= maxQty}
+              disabled={cancelQty >= maxQty}
               className="w-10 h-10 rounded-xl bg-white border border-gray-200 font-bold text-lg disabled:opacity-40 active:bg-gray-100"
               aria-label="Artır"
             >
@@ -202,21 +185,13 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
         <button
           type="button"
           onClick={handleCancel}
-          disabled={loading}
-          className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold disabled:opacity-50"
+          className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold active:scale-[0.98] transition-transform"
         >
-          {loading
-            ? (progress
-              ? `${progress.current}/${progress.total} iptal…`
-              : 'İşleniyor...')
-            : partial
-              ? `${cancelQty} Adet İptal Et`
-              : 'İptal Et'}
+          {partial ? `${cancelQty} Adet İptal Et` : 'İptal Et'}
         </button>
         <button
           type="button"
           onClick={onClose}
-          disabled={loading}
           className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-bold"
         >
           Vazgeç
