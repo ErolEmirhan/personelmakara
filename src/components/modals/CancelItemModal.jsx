@@ -4,12 +4,57 @@ import { submitAndWaitMobileAction } from '../../services/firebaseService';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 
+async function cancelOrderItems({
+  item,
+  tableId,
+  staff,
+  cancelQty,
+  reason,
+  onProgress,
+}) {
+  const base = {
+    type: 'cancel_item',
+    itemId: item.id,
+    cancelReason: reason,
+    tableId,
+    staffId: staff.id,
+    staffName: `${staff.name} ${staff.surname}`,
+  };
+
+  const maxQty = item.quantity || 1;
+
+  if (cancelQty >= maxQty) {
+    return submitAndWaitMobileAction({
+      ...base,
+      cancelQuantity: maxQty,
+    });
+  }
+
+  let lastResult = null;
+  for (let i = 0; i < cancelQty; i += 1) {
+    onProgress?.(i + 1, cancelQty);
+    lastResult = await submitAndWaitMobileAction({
+      ...base,
+      cancelQuantity: 1,
+    });
+    if (!lastResult.success) {
+      return {
+        ...lastResult,
+        partialCount: i,
+      };
+    }
+  }
+  return lastResult;
+}
+
 export function CancelItemModal({ open, item, tableId, onClose }) {
   const { staff } = useAuth();
   const { showToast } = useApp();
   const [reason, setReason] = useState('');
   const [cancelQty, setCancelQty] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [inlineError, setInlineError] = useState('');
 
   const maxQty = item?.quantity || 1;
 
@@ -17,6 +62,8 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
     if (open && item) {
       setCancelQty(item.quantity);
       setReason('');
+      setInlineError('');
+      setProgress(null);
     }
   }, [open, item?.id, item?.quantity]);
 
@@ -24,24 +71,31 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
     if (!item || !tableId || !staff) return;
     const trimmed = reason.trim();
     if (!trimmed) {
+      setInlineError('İptal açıklaması zorunludur');
       showToast('error', 'Gerekli', 'İptal açıklaması zorunludur');
       return;
     }
     if (cancelQty < 1 || cancelQty > maxQty) {
-      showToast('error', 'Hata', 'Geçersiz adet');
+      setInlineError('Geçersiz adet');
       return;
     }
+
+    setInlineError('');
     setLoading(true);
+    setProgress(null);
+
     try {
-      const res = await submitAndWaitMobileAction({
-        type: 'cancel_item',
-        itemId: item.id,
-        cancelQuantity: cancelQty,
-        cancelReason: trimmed,
+      const res = await cancelOrderItems({
+        item,
         tableId,
-        staffId: staff.id,
-        staffName: `${staff.name} ${staff.surname}`,
+        staff,
+        cancelQty,
+        reason: trimmed,
+        onProgress: (current, total) => {
+          if (total > 1) setProgress({ current, total });
+        },
       });
+
       if (res.success) {
         const label = cancelQty === maxQty
           ? 'Ürün iptal edildi'
@@ -49,15 +103,31 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
         showToast('success', 'İptal', label);
         setReason('');
         onClose();
-      } else if (res.requiresReason) {
+        return;
+      }
+
+      if (res.partialCount > 0) {
+        const msg = `${res.partialCount} adet iptal edildi; devam edilemedi: ${res.error || 'Bilinmeyen hata'}`;
+        setInlineError(msg);
+        showToast('error', 'Kısmi iptal', msg);
+        onClose();
+        return;
+      }
+
+      if (res.requiresReason) {
+        setInlineError(res.error || 'İptal açıklaması girin');
         showToast('error', 'Gerekli', res.error || 'İptal açıklaması girin');
       } else {
+        setInlineError(res.error || 'İptal edilemedi');
         showToast('error', 'Hata', res.error || 'İptal edilemedi');
       }
     } catch (err) {
-      showToast('error', 'Hata', err.message || 'Bağlantı hatası');
+      const msg = err.message || 'Bağlantı hatası';
+      setInlineError(msg);
+      showToast('error', 'Hata', msg);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -109,10 +179,18 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
       <input
         type="text"
         value={reason}
-        onChange={(e) => setReason(e.target.value)}
+        onChange={(e) => {
+          setReason(e.target.value);
+          if (inlineError) setInlineError('');
+        }}
         placeholder="İptal açıklaması (zorunlu)"
-        className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:border-red-300 mb-4"
+        className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:border-red-300 mb-2"
       />
+
+      {inlineError && (
+        <p className="text-xs text-red-600 font-medium mb-3 leading-relaxed">{inlineError}</p>
+      )}
+
       <p className="text-xs text-gray-500 mb-4">
         İptal fişi yazdırılır. Masaüstü uygulamanın açık olması gerekir.
       </p>
@@ -123,7 +201,13 @@ export function CancelItemModal({ open, item, tableId, onClose }) {
           disabled={loading}
           className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold disabled:opacity-50"
         >
-          {loading ? 'İşleniyor...' : partial ? `${cancelQty} Adet İptal Et` : 'İptal Et'}
+          {loading
+            ? (progress
+              ? `${progress.current}/${progress.total} iptal…`
+              : 'İşleniyor...')
+            : partial
+              ? `${cancelQty} Adet İptal Et`
+              : 'İptal Et'}
         </button>
         <button
           type="button"

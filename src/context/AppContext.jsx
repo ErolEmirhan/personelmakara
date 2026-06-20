@@ -16,11 +16,14 @@ import { MAIN_TABS } from '../constants/nav';
 import { useBranch } from './BranchContext';
 import { useAuth } from './AuthContext';
 
+import { ToastOverlay } from '../components/ui/Toast';
+
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
   const { branchKey, configured } = useBranch();
   const { staff } = useAuth();
+  const [toast, setToast] = useState(null);
   const [screen, setScreen] = useState('tables');
   const [mainTab, setMainTabState] = useState(MAIN_TABS.TABLES);
   const [tables, setTables] = useState([]);
@@ -54,7 +57,10 @@ export function AppProvider({ children }) {
     return false;
   }, []);
 
-  const showToast = useCallback(() => {}, []);
+  const showToast = useCallback((type, title, message) => {
+    setToast({ type, title, message });
+    window.setTimeout(() => setToast(null), 3800);
+  }, []);
 
   const loadData = useCallback(async (options = {}) => {
     const { force = false } = typeof options === 'boolean' ? { force: options } : options;
@@ -285,6 +291,7 @@ export function AppProvider({ children }) {
       }}
     >
       {children}
+      <ToastOverlay toast={toast} />
     </AppContext.Provider>
   );
 }
