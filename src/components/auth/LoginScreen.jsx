@@ -3,25 +3,24 @@ import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { ChangePasswordModal } from '../modals/ChangePasswordModal';
 
-const LOGO_SRC = `${import.meta.env.BASE_URL}logo.png`;
+const LOGO_SRC = `${import.meta.env.BASE_URL}makara.png`;
 
-function BrandLogo({ accent, accentLight }) {
+function BrandLogo({ accent }) {
   return (
     <div className="relative mx-auto w-fit">
       <div
-        className="absolute inset-0 rounded-full blur-2xl opacity-25 scale-[1.4]"
-        style={{ background: accent }}
+        className="absolute inset-[-6%] rounded-full opacity-50 blur-sm"
+        style={{
+          background: `conic-gradient(from 180deg, transparent, ${accent}30, transparent, ${accent}18, transparent)`,
+        }}
       />
-      <div
-        className="relative flex items-center justify-center w-[172px] h-[172px] rounded-full shadow-[0_20px_48px_-20px_rgba(15,23,42,0.2)]"
-        style={{ backgroundColor: accentLight }}
-      >
+      <div className="relative flex items-center justify-center w-[172px] h-[172px] rounded-full bg-white p-3 shadow-[0_20px_50px_-24px_rgba(236,72,153,0.28)] ring-1 ring-slate-100">
         <img
           src={LOGO_SRC}
           alt="MAKARA"
-          width={116}
-          height={116}
-          className="w-[116px] h-[116px] object-contain"
+          width={148}
+          height={148}
+          className="w-full h-full object-contain"
           draggable={false}
         />
       </div>
@@ -73,7 +72,7 @@ export function LoginScreen() {
       <div className="relative z-10 w-full max-w-[400px] flex flex-col items-center">
         {/* Centered brand */}
         <header className="text-center mb-9 animate-slide-up w-full">
-          <BrandLogo accent={accent} accentLight={accentLight} />
+          <BrandLogo accent={accent} />
           <p
             className="mt-6 text-[11px] font-bold uppercase tracking-[0.28em] text-slate-400"
           >

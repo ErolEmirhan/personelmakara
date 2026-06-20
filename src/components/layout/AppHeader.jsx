@@ -118,13 +118,6 @@ export function AppHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50">
         <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.12)] pt-[env(safe-area-inset-top,0px)]">
-          <div
-            className="h-[2px] w-full"
-            style={{
-              background: `linear-gradient(90deg, transparent 0%, ${theme.accentSolid}88 35%, ${theme.accentSolid} 50%, ${theme.accentSolid}88 65%, transparent 100%)`,
-            }}
-          />
-
           <div className="flex items-center gap-3 px-4 h-14">
             <button
               type="button"

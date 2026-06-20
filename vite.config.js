@@ -1,15 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { localApiPlugin } from './scripts/vite-local-api.js';
 
 // Vercel'de kök dizinden sunulur; kasa PC entegrasyonunda /mobile/ alt yolu kullanılır.
 const base = process.env.VERCEL ? '/' : '/mobile/';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
+    localApiPlugin(mode),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: null,
       includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png', 'makara.png'],
       manifest: {
         name: 'MAKARA Mobil Sipariş',
@@ -39,6 +42,10 @@ export default defineConfig({
       workbox: {
         navigateFallback: `${base}index.html`,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        importScripts: ['firebase-messaging-sw.js'],
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\/image-proxy/,
@@ -64,4 +71,4 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
   },
-});
+}));

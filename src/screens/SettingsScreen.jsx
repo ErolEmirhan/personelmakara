@@ -21,8 +21,11 @@ import {
 import {
   getPushPermissionState,
   isPushConfiguredForBranch,
+  isPushRegisteredLocally,
   isPushSupported,
+  pushRegistrationErrorMessage,
   registerStaffPushNotifications,
+  syncStaffPushToken,
 } from '../services/pushNotifications';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
 
@@ -106,6 +109,8 @@ export function SettingsScreen() {
   const [notifPrefs, setNotifPrefs] = useState(DEFAULT_NOTIFICATION_PREFS);
   const [pushPermission, setPushPermission] = useState('default');
   const [pushBusy, setPushBusy] = useState(false);
+  const [pushRegistered, setPushRegistered] = useState(false);
+  const [pushStatusNote, setPushStatusNote] = useState('');
   const [showLogout, setShowLogout] = useState(false);
   const pushAvailable = isPushConfiguredForBranch(branchKey);
 
@@ -119,6 +124,22 @@ export function SettingsScreen() {
   useEffect(() => {
     getPushPermissionState().then(setPushPermission);
   }, []);
+
+  useEffect(() => {
+    if (!staff?.id || !pushAvailable) return;
+    setPushRegistered(isPushRegisteredLocally(staff.id));
+
+    if (Notification.permission !== 'granted') return;
+
+    syncStaffPushToken(branchKey, staff.id).then((result) => {
+      if (result.ok) {
+        setPushRegistered(true);
+        setPushStatusNote('Bu cihaz push için kayıtlı.');
+      } else if (result.reason !== 'not_granted') {
+        setPushStatusNote(pushRegistrationErrorMessage(result.reason, result.error));
+      }
+    });
+  }, [staff?.id, branchKey, pushAvailable]);
 
   const profileDirty = useMemo(() => {
     if (!staff) return false;
@@ -218,23 +239,31 @@ export function SettingsScreen() {
   const handleEnablePush = async () => {
     if (!staff?.id || !pushAvailable || pushBusy) return;
     setPushBusy(true);
+    setPushStatusNote('');
     try {
       const supported = await isPushSupported();
       if (!supported) {
-        showToast('error', 'Desteklenmiyor', 'Bu cihaz push bildirimini desteklemiyor');
+        setPushStatusNote('Bu cihaz push bildirimini desteklemiyor.');
         return;
       }
       const result = await registerStaffPushNotifications(branchKey, staff.id);
       const permission = await getPushPermissionState();
       setPushPermission(permission);
       if (result.ok) {
+        setPushRegistered(true);
+        setPushStatusNote('Bu cihaz push için kayıtlı. Yönetici bildirimi gelince ana ekranda görünür.');
         showToast('success', 'Aktif', 'Ana ekran bildirimleri açıldı');
-      } else if (result.reason === 'denied') {
-        showToast('error', 'Reddedildi', 'Telefon ayarlarından bildirim izni verin');
       } else {
-        showToast('error', 'Hata', 'Push kaydı yapılamadı');
+        setPushRegistered(false);
+        setPushStatusNote(pushRegistrationErrorMessage(result.reason, result.error));
+        if (result.reason === 'denied') {
+          showToast('error', 'Reddedildi', 'Telefon ayarlarından bildirim izni verin');
+        } else {
+          showToast('error', 'Hata', pushRegistrationErrorMessage(result.reason, result.error));
+        }
       }
-    } catch {
+    } catch (err) {
+      setPushStatusNote(err.message || 'Push kaydı yapılamadı');
       showToast('error', 'Hata', 'Push kaydı yapılamadı');
     } finally {
       setPushBusy(false);
@@ -413,7 +442,7 @@ export function SettingsScreen() {
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                   Uygulama kapalıyken yönetici bildirimlerini almak için izin verin. PWA ana ekrana ekli olmalıdır.
                 </p>
-                <div className="mt-3 flex items-center gap-2">
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
                   <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${
                     pushPermission === 'granted'
                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
@@ -421,8 +450,13 @@ export function SettingsScreen() {
                         ? 'bg-red-50 text-red-600 border border-red-100'
                         : 'bg-slate-100 text-slate-600 border border-slate-200'
                   }`}>
-                    {pushPermission === 'granted' ? 'Açık' : pushPermission === 'denied' ? 'Kapalı' : 'İzin bekleniyor'}
+                    {pushPermission === 'granted' ? 'İzin verildi' : pushPermission === 'denied' ? 'İzin kapalı' : 'İzin bekleniyor'}
                   </span>
+                  {pushRegistered && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-100">
+                      Cihaz kayıtlı
+                    </span>
+                  )}
                   {pushPermission !== 'granted' && (
                     <button
                       type="button"
@@ -433,7 +467,24 @@ export function SettingsScreen() {
                       {pushBusy ? 'Kaydediliyor…' : 'İzin ver'}
                     </button>
                   )}
+                  {pushPermission === 'granted' && !pushRegistered && (
+                    <button
+                      type="button"
+                      onClick={handleEnablePush}
+                      disabled={pushBusy}
+                      className="ml-auto text-xs font-bold px-3 py-2 rounded-xl bg-violet-600 text-white disabled:opacity-45 active:scale-[0.98] transition-all"
+                    >
+                      {pushBusy ? 'Kaydediliyor…' : 'Cihazı kaydet'}
+                    </button>
+                  )}
                 </div>
+                {pushStatusNote && (
+                  <p className={`mt-2 text-xs leading-relaxed ${
+                    pushRegistered ? 'text-emerald-700' : 'text-red-600'
+                  }`}>
+                    {pushStatusNote}
+                  </p>
+                )}
               </div>
             )}
           </SettingsCard>

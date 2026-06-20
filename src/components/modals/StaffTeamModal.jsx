@@ -17,9 +17,6 @@ import { StaffAssignModal } from './StaffAssignModal';
 import { StaffDeleteModal } from './StaffDeleteModal';
 import { staffRoleLabel, staffRolePriority, canManageStaff } from '../../utils/staffRole';
 import {
-  adminBadgeClass,
-} from '../../constants/adminTheme';
-import {
   bossBadgeClass,
 } from '../../constants/bossTheme';
 import {
@@ -222,41 +219,32 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
                   const isBoss = !!member.is_boss && !isAdmin;
                   const isManager = !!member.is_manager && !isAdmin && !isBoss;
                   const isSelf = member.isSelf;
-                  const hasLuxuryBg = isSelf || isAdmin || isBoss || isManager;
-                  const cardClass = isSelf
-                    ? getLuxuryCardShell('self')
-                    : isAdmin
-                      ? getLuxuryCardShell('admin')
-                      : isBoss
-                        ? getLuxuryCardShell('boss')
-                        : isManager
-                          ? getLuxuryCardShell('manager')
-                          : 'rounded-xl border border-gray-100 bg-white shadow-sm shadow-gray-100/80';
+                  const luxuryVariant = isAdmin
+                    ? 'self'
+                    : isBoss
+                      ? 'boss'
+                      : isManager
+                        ? 'manager'
+                        : null;
+                  const hasLuxuryBg = !!luxuryVariant;
+                  const isPurpleLuxury = isAdmin;
+                  const cardClass = hasLuxuryBg
+                    ? getLuxuryCardShell(luxuryVariant)
+                    : `rounded-xl border bg-white shadow-sm shadow-gray-100/80 ${
+                        isSelf ? 'border-violet-200/70' : 'border-gray-100'
+                      }`;
 
                   return (
                     <li key={member.id} className={`group transition-all ${cardClass}`}>
-                      {isSelf && <LuxuryFluidBackdrop variant="self" />}
-                      {isAdmin && !isSelf && (
-                        <>
-                          <LuxuryFluidBackdrop variant="admin" />
-                          <div
-                            className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-gradient-to-b from-amber-700 via-amber-500 to-amber-600/80 z-[1]"
-                            aria-hidden
-                          />
-                        </>
+                      {luxuryVariant && <LuxuryFluidBackdrop variant={luxuryVariant} />}
+                      {isBoss && (
+                        <div
+                          className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-gradient-to-b from-red-800 via-red-500 to-rose-500/85 z-[1]"
+                          aria-hidden
+                        />
                       )}
-                      {isBoss && !isSelf && (
-                        <>
-                          <LuxuryFluidBackdrop variant="boss" />
-                          <div
-                            className="absolute left-0 top-2 bottom-2 w-[2.5px] rounded-full bg-gradient-to-b from-red-800 via-red-500 to-rose-500/85 z-[1]"
-                            aria-hidden
-                          />
-                        </>
-                      )}
-                      {isManager && !isSelf && <LuxuryFluidBackdrop variant="manager" />}
                       <div className={`relative z-10 flex items-center gap-2.5 ${
-                        hasLuxuryBg && !isSelf ? 'py-2 pr-2 pl-3' : 'p-2 pl-2.5'
+                        hasLuxuryBg ? 'py-2 pr-2 pl-3' : 'p-2 pl-2.5'
                       }`}>
                         <div className="relative shrink-0">
                           {isSelf ? (
@@ -308,68 +296,58 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1 min-w-0">
-                            <p className={`font-semibold truncate leading-tight ${
-                              isSelf
-                                ? 'text-[13px] text-white'
-                                : 'text-[13px] text-gray-900'
+                            <p className={`font-semibold truncate leading-tight text-[13px] ${
+                              isPurpleLuxury ? 'text-white' : 'text-gray-900'
                             }`}>
                               {member.name} {member.surname}
                             </p>
                           </div>
                           <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                             {isAdmin && (
-                              <span className={`shrink-0 ${
-                                isSelf
-                                  ? 'text-[8px] font-semibold tracking-wide uppercase text-amber-100 bg-white/10 px-1.5 py-px rounded-full border border-amber-200/30'
-                                  : `${adminBadgeClass} !text-[8px] !px-1.5 !py-px !tracking-wide`
-                              }`}>
+                              <span className="shrink-0 text-[8px] font-semibold tracking-wide uppercase text-amber-100 bg-white/10 px-1.5 py-px rounded-full border border-amber-200/30">
                                 Admin
                               </span>
                             )}
-                            {isManager && !isSelf && (
+                            {isManager && (
                               <span className={`shrink-0 ${managerBadgeClass}`}>
                                 Müdür
                               </span>
                             )}
-                            {(isBoss || (isSelf && member.is_boss && !isAdmin)) && (
-                              <span className={`shrink-0 ${
-                                isSelf
-                                  ? 'text-[8px] font-semibold tracking-wide uppercase text-rose-100 bg-white/10 px-1.5 py-px rounded-full border border-red-200/30'
-                                  : `${bossBadgeClass} !text-[8px] !px-1.5 !py-px !tracking-wide`
-                              }`}>
+                            {isBoss && (
+                              <span className={`shrink-0 ${bossBadgeClass} !text-[8px] !px-1.5 !py-px !tracking-wide`}>
                                 Patron
                               </span>
                             )}
                             {isSelf && (
-                              <span className="text-[8px] font-bold uppercase tracking-wide text-white/90 bg-white/12 px-1.5 py-px rounded-full border border-white/20 shrink-0">
+                              <span className={`text-[8px] font-bold uppercase tracking-wide shrink-0 px-1.5 py-px rounded-full border ${
+                                isPurpleLuxury
+                                  ? 'text-white/90 bg-white/12 border-white/20'
+                                  : 'text-violet-700 bg-violet-50 border-violet-100'
+                              }`}>
                                 Sen
                               </span>
                             )}
                             <span className={`text-[10px] leading-none ${
-                              isSelf
+                              isPurpleLuxury
                                 ? 'text-white/60'
-                                : isAdmin
-                                  ? 'text-amber-800/45'
-                                  : isBoss
-                                    ? 'text-red-800/45'
-                                    : isManager
-                                      ? 'text-orange-800/45'
-                                      : 'text-gray-400'
+                                : isBoss
+                                  ? 'text-red-800/45'
+                                  : isManager
+                                    ? 'text-orange-800/45'
+                                    : 'text-gray-400'
                             }`}>
                               · {staffRoleLabel(member)}
                             </span>
                           </div>
                           {member.viewingTableName && (
                             <p className={`text-[10px] font-medium mt-0.5 truncate leading-tight ${
-                              isSelf
+                              isPurpleLuxury
                                 ? 'text-white/75'
-                                : isAdmin
-                                  ? 'text-amber-800/65'
-                                  : isBoss
-                                    ? 'text-red-800/65'
-                                    : isManager
-                                      ? 'text-orange-800/65'
-                                      : 'text-pink-600/90'
+                                : isBoss
+                                  ? 'text-red-800/65'
+                                  : isManager
+                                    ? 'text-orange-800/65'
+                                    : 'text-pink-600/90'
                             }`}>
                               {member.viewingTableName}&apos;e bakıyor
                             </p>
@@ -380,7 +358,7 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
                           <OnlinePill
                             online={member.online}
                             compact
-                            light={isSelf}
+                            light={isPurpleLuxury}
                             lastSeenLabel={member.lastSeenLabel}
                           />
                           {isCurrentAdmin && (
@@ -389,7 +367,7 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
                                 type="button"
                                 onClick={() => setAssignTarget(member)}
                                 className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md active:scale-95 transition-transform ${
-                                  isSelf
+                                  isPurpleLuxury
                                     ? 'bg-white/12 text-white border border-white/20'
                                     : 'bg-violet-50 text-violet-700 border border-violet-100'
                                 }`}

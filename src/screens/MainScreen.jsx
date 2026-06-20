@@ -6,7 +6,7 @@ import { startStaffPresence, stopStaffPresence } from '../services/firebaseServi
 import {
   getPushPermissionState,
   isPushConfiguredForBranch,
-  syncStaffPushToken,
+  requestPushOnAppEntry,
 } from '../services/pushNotifications';
 import { AppHeader } from '../components/layout/AppHeader';
 import { BottomNav } from '../components/layout/BottomNav';
@@ -54,13 +54,13 @@ export function MainScreen() {
 
     let cancelled = false;
     (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (cancelled) return;
+
       const permission = await getPushPermissionState();
-      if (cancelled || permission !== 'granted') return;
-      try {
-        await syncStaffPushToken(branchKey, staff.id);
-      } catch {
-        /* token yenileme isteğe bağlı */
-      }
+      if (permission === 'denied') return;
+
+      await requestPushOnAppEntry(branchKey, staff.id);
     })();
 
     const onSwMessage = (event) => {

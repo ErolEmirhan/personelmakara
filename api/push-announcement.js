@@ -100,6 +100,7 @@ export default async function handler(req, res) {
     let sent = 0;
     let failed = 0;
     const invalidTokens = [];
+    let firstError = null;
 
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
       const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
@@ -132,6 +133,9 @@ export default async function handler(req, res) {
 
       response.responses.forEach((item, index) => {
         if (item.success) return;
+        if (!firstError && item.error?.message) {
+          firstError = item.error.message;
+        }
         const code = item.error?.code;
         if (
           code === 'messaging/invalid-registration-token' ||
@@ -150,6 +154,7 @@ export default async function handler(req, res) {
       failed,
       totalTokens: tokens.length,
       invalidRemoved: invalidTokens.length,
+      firstError,
     });
   } catch (err) {
     console.error('push-announcement error:', err);

@@ -6,10 +6,12 @@ export function StaffAnnouncementComposer({ branchKey, staff, theme, showToast }
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [pushNote, setPushNote] = useState('');
 
   const handleSend = async () => {
     if (!message.trim() || sending) return;
     setSending(true);
+    setPushNote('');
     try {
       const trimmedTitle = title.trim();
       const trimmedMessage = message.trim();
@@ -29,14 +31,26 @@ export function StaffAnnouncementComposer({ branchKey, staff, theme, showToast }
           announcementId: result.id,
         });
         const sent = pushResult?.sent ?? 0;
+        const failed = pushResult?.failed ?? 0;
+        const total = pushResult?.totalTokens ?? 0;
+
+        if (sent > 0) {
+          setPushNote(`Push: ${sent} cihaza iletildi${failed > 0 ? ` (${failed} başarısız)` : ''}.`);
+        } else if (total === 0) {
+          setPushNote('Push: Kayıtlı cihaz yok. Personel Ayarlar → Ana ekran push → Cihazı kaydet demeli.');
+        } else {
+          setPushNote(`Push: ${total} cihaz bulundu ama gönderilemedi.${pushResult?.firstError ? ` (${pushResult.firstError})` : ''}`);
+        }
+
         showToast(
           'success',
           'Gönderildi',
           sent > 0
             ? `Bildirim uygulamada ve ${sent} cihaza push olarak iletildi`
-            : 'Bildirim uygulamada görünür (henüz push kayıtlı cihaz yok)'
+            : 'Bildirim uygulamada görünür (push cihazı kayıtlı değil)'
         );
-      } catch {
+      } catch (err) {
+        setPushNote(`Push hatası: ${err.message || 'API ulaşılamadı'}`);
         showToast(
           'success',
           'Gönderildi',
@@ -87,6 +101,11 @@ export function StaffAnnouncementComposer({ branchKey, staff, theme, showToast }
       >
         {sending ? 'Gönderiliyor…' : 'Bildirim gönder'}
       </button>
+      {pushNote && (
+        <p className="text-xs text-slate-600 leading-relaxed rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+          {pushNote}
+        </p>
+      )}
     </div>
   );
 }
