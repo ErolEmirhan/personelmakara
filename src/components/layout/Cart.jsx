@@ -96,9 +96,11 @@ export function Cart() {
     }
   };
 
+  const bottomSafePad = 'pb-[calc(1rem+env(safe-area-inset-bottom,0px))]';
+
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-40 safe-bottom">
+      <div className="fixed bottom-0 left-0 right-0 z-40">
         <div className="w-full rounded-t-3xl bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] border-t border-gray-100 overflow-hidden">
           <button
             onClick={() => setExpanded(!expanded)}
@@ -158,9 +160,16 @@ export function Cart() {
 
           {cart.length > 0 && (
             <button onClick={handleSend} disabled={sending}
-              className="w-full py-4 font-bold text-lg text-white bg-gradient-to-r from-emerald-500 to-teal-500 disabled:opacity-70">
+              className={`w-full pt-4 font-bold text-lg text-white bg-gradient-to-r from-emerald-500 to-teal-500 disabled:opacity-70 ${bottomSafePad}`}>
               {sent ? '✓ Gönderildi' : sending ? 'Gönderiliyor...' : 'Siparişi Gönder'}
             </button>
+          )}
+
+          {cart.length === 0 && (
+            <div
+              aria-hidden
+              className={`min-h-[env(safe-area-inset-bottom,0px)] ${expanded ? 'bg-white' : `bg-gradient-to-r ${theme.accent}`}`}
+            />
           )}
         </div>
       </div>
