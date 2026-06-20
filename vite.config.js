@@ -1,14 +1,26 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
 import { localApiPlugin } from './scripts/vite-local-api.js';
 
 // Vercel'de kök dizinden sunulur; kasa PC entegrasyonunda /mobile/ alt yolu kullanılır.
 const base = process.env.VERCEL ? '/' : '/mobile/';
+const appVersion =
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
+  `v1-compat-${base === '/' ? 'root' : 'mobile'}`;
 
 export default defineConfig(({ mode }) => ({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     localApiPlugin(mode),
+    legacy({
+      targets: ['Android >= 5', 'Chrome >= 63', 'iOS >= 12', 'not IE 11'],
+      modernPolyfills: true,
+      renderLegacyChunks: true,
+    }),
     react(),
     VitePWA({
       strategies: 'injectManifest',
@@ -77,5 +89,6 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    cssTarget: 'chrome61',
   },
 }));

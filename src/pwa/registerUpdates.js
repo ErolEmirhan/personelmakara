@@ -21,10 +21,17 @@ function scheduleUpdateChecks(registration) {
 export function initPwaUpdates() {
   if (!('serviceWorker' in navigator)) return;
 
-  registerSW({
-    immediate: true,
-    onRegisteredSW(_swUrl, registration) {
-      if (registration) scheduleUpdateChecks(registration);
-    },
-  });
+  try {
+    registerSW({
+      immediate: true,
+      onRegisteredSW(_swUrl, registration) {
+        if (registration) scheduleUpdateChecks(registration);
+      },
+      onRegisterError(error) {
+        console.warn('Service worker kaydı başarısız:', error);
+      },
+    });
+  } catch (error) {
+    console.warn('Service worker başlatılamadı:', error);
+  }
 }
