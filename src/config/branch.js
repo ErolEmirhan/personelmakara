@@ -78,8 +78,9 @@ export function hasManagerPermission(staff, branchKey) {
 export function canCancelOrderItem(staff, branchKey) {
   if (!staff) return false;
   if (branchKey === 'sultansomati') return true;
-  if (branchKey === 'makara' && staff.is_chef) return true;
+  if (staff.is_admin || staff.is_boss) return true;
   if (staff.is_manager) return true;
+  if (branchKey === 'makara' && staff.is_chef) return true;
   return false;
 }
 

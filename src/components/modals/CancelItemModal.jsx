@@ -19,6 +19,10 @@ async function cancelOrderItems({
     tableId,
     staffId: staff.id,
     staffName: `${staff.name} ${staff.surname}`,
+    staffIsManager: !!staff.is_manager,
+    staffIsChef: !!staff.is_chef,
+    staffIsAdmin: !!staff.is_admin,
+    staffIsBoss: !!staff.is_boss,
   };
 
   const maxQty = item.quantity || 1;
