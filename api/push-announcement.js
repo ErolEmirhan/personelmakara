@@ -30,6 +30,8 @@ export default async function handler(req, res) {
   const title = (body?.title || '').trim();
   const message = (body?.message || '').trim();
   const announcementId = body?.announcementId || null;
+  const pushType = body?.pushType || 'staff_announcement';
+  const ticketId = body?.ticketId || null;
   const tokens = normalizeTokens(body?.tokens);
 
   if (!branchKey || !message) {
@@ -55,7 +57,9 @@ export default async function handler(req, res) {
     const protocol = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
     const origin = host ? `${protocol}://${host}` : '';
 
-    const openUrl = origin ? `${origin}/?tab=notifications` : '/?tab=notifications';
+    const openUrl = pushType === 'staff_support' && ticketId
+      ? (origin ? `${origin}/?open=support&ticket=${encodeURIComponent(ticketId)}` : `/?open=support&ticket=${encodeURIComponent(ticketId)}`)
+      : (origin ? `${origin}/?tab=notifications` : '/?tab=notifications');
 
     let sent = 0;
     let failed = 0;
@@ -67,9 +71,10 @@ export default async function handler(req, res) {
       const response = await messaging.sendEachForMulticast({
         tokens: chunk,
         data: {
-          type: 'staff_announcement',
+          type: pushType,
           branchKey: String(branchKey),
           announcementId: String(announcementId || ''),
+          ticketId: String(ticketId || ''),
           title: notificationTitle,
           body: notificationBody,
         },

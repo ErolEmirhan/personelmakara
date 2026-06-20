@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
@@ -104,7 +104,33 @@ export function AppHeader() {
   const { setDrawerOpen, screen, selectedTable, mainTab } = useApp();
   const [teamOpen, setTeamOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [supportTicketId, setSupportTicketId] = useState(null);
   const supportBadgeCount = useSupportBadgeCount(branchKey, staff);
+
+  useEffect(() => {
+    const openSupport = (ticketId = null) => {
+      setSupportTicketId(ticketId || null);
+      setSupportOpen(true);
+    };
+
+    const onOpenEvent = (event) => {
+      openSupport(event.detail?.ticketId || null);
+    };
+
+    const onSwMessage = (event) => {
+      if (event.data?.type === 'OPEN_SUPPORT') {
+        openSupport(event.data.ticketId || null);
+      }
+    };
+
+    window.addEventListener('makara-open-support', onOpenEvent);
+    navigator.serviceWorker?.addEventListener('message', onSwMessage);
+
+    return () => {
+      window.removeEventListener('makara-open-support', onOpenEvent);
+      navigator.serviceWorker?.removeEventListener('message', onSwMessage);
+    };
+  }, []);
 
   const isOrder = screen === 'order' && selectedTable;
   const isHome = !isOrder && mainTab === MAIN_TABS.TABLES;
@@ -121,11 +147,11 @@ export function AppHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50">
         <div className="bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.12)] pt-[env(safe-area-inset-top,0px)]">
-          <div className="flex items-center gap-3 px-4 h-14">
+          <div className="relative flex items-center justify-between px-4 h-14">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
-              className="shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 text-slate-600 flex items-center justify-center active:scale-[0.96] transition-transform"
+              className="relative z-10 shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 text-slate-600 flex items-center justify-center active:scale-[0.96] transition-transform"
               aria-label="Menü"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -133,27 +159,30 @@ export function AppHeader() {
               </svg>
             </button>
 
-            <HeaderCenter
-              isOrder={isOrder}
-              isHome={isHome}
-              title={title}
-              subtitle={subtitle}
-              theme={theme}
-              staff={staff}
-            />
+            <div className="pointer-events-none absolute inset-x-0 flex justify-center px-[calc(5.5rem+1.5rem)]">
+              <HeaderCenter
+                isOrder={isOrder}
+                isHome={isHome}
+                title={title}
+                subtitle={subtitle}
+                theme={theme}
+                staff={staff}
+              />
+            </div>
 
-            <SupportFlagButton
-              onClick={() => setSupportOpen(true)}
-              badgeCount={supportBadgeCount}
-            />
+            <div className="relative z-10 flex items-center gap-3 shrink-0">
+              <SupportFlagButton
+                onClick={() => setSupportOpen(true)}
+                badgeCount={supportBadgeCount}
+              />
 
-            <button
-              type="button"
-              onClick={() => setTeamOpen(true)}
-              className="shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 flex items-center justify-center active:scale-[0.96] transition-transform overflow-visible"
-              aria-label="Ekip paneli"
-              title="Ekip"
-            >
+              <button
+                type="button"
+                onClick={() => setTeamOpen(true)}
+                className="shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 flex items-center justify-center active:scale-[0.96] transition-transform overflow-visible"
+                aria-label="Ekip paneli"
+                title="Ekip"
+              >
               {staff ? (
                 <StaffAvatar
                   name={staff.name}
@@ -171,12 +200,20 @@ export function AppHeader() {
                   ?
                 </span>
               )}
-            </button>
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      <SupportPanel open={supportOpen} onClose={() => setSupportOpen(false)} />
+      <SupportPanel
+        open={supportOpen}
+        initialTicketId={supportTicketId}
+        onClose={() => {
+          setSupportOpen(false);
+          setSupportTicketId(null);
+        }}
+      />
 
       <StaffTeamModal
         open={teamOpen}

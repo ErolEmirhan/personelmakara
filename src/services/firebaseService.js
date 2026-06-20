@@ -961,6 +961,27 @@ export async function getStaffPushRegistrationStatus(staffId) {
   };
 }
 
+export async function fetchStaffPushTokens(staffId) {
+  if (staffId == null) return [];
+  const db = requireMainDb();
+  const snap = await getDoc(doc(db, STAFF_PUSH_TOKENS, String(staffId)));
+  if (!snap.exists()) return [];
+  return (snap.data()?.tokens || []).filter((t) => typeof t === 'string' && t.length > 20);
+}
+
+export async function fetchAdminPushTokens(branchKey) {
+  const admins = (await fetchBranchStaff(branchKey)).filter((s) => s.is_admin);
+  const tokens = new Set();
+  await Promise.all(
+    admins.map(async (admin) => {
+      for (const token of await fetchStaffPushTokens(admin.id)) {
+        tokens.add(token);
+      }
+    })
+  );
+  return [...tokens];
+}
+
 export async function fetchBranchPushTokens(branchKey) {
   const db = requireMainDb();
   const snap = await getDocs(
@@ -1035,6 +1056,15 @@ function mapSupportMessage(docSnap) {
   };
 }
 
+async function queueSupportMessagePush(params) {
+  try {
+    const { notifySupportMessagePush } = await import('./pushNotifications');
+    await notifySupportMessagePush(params);
+  } catch (err) {
+    console.warn('support push notify failed:', err);
+  }
+}
+
 export async function createSupportTicket(branchKey, staff, { category, text }) {
   const trimmed = (text || '').trim();
   if (!trimmed) throw new Error('Mesaj gerekli');
@@ -1063,6 +1093,17 @@ export async function createSupportTicket(branchKey, staff, { category, text }) 
     isAdmin: !!staff.is_admin,
     text: trimmed,
     createdAt: serverTimestamp(),
+  });
+
+  queueSupportMessagePush({
+    branchKey,
+    ticketId: ticketRef.id,
+    category: category || 'issue',
+    messageText: trimmed,
+    senderStaffId: staff.id,
+    senderIsAdmin: !!staff.is_admin,
+    senderName: `${staff.name || ''} ${staff.surname || ''}`.trim(),
+    recipientStaffId: staff.id,
   });
 
   return ticketRef.id;
@@ -1165,6 +1206,17 @@ export async function sendSupportMessage(ticketId, staff, text) {
     lastMessageAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     needsAdminReply: !isAdmin,
+  });
+
+  queueSupportMessagePush({
+    branchKey: ticket.branchKey,
+    ticketId,
+    category: ticket.category || 'issue',
+    messageText: trimmed,
+    senderStaffId: staff.id,
+    senderIsAdmin: isAdmin,
+    senderName: `${staff.name || ''} ${staff.surname || ''}`.trim(),
+    recipientStaffId: ticket.staffId,
   });
 }
 

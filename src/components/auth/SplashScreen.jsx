@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
+import {
+  isPushConfiguredForBranch,
+  requestPushOnAppEntry,
+} from '../../services/pushNotifications';
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}makara.png`;
 const BRAND_PINK = '#ec4899';
@@ -10,7 +14,7 @@ const SPLASH_MIN_MS = 2000;
 
 export function SplashScreen() {
   const { staff, completeSplash } = useAuth();
-  const { theme } = useBranch();
+  const { theme, branchKey } = useBranch();
   const { bootstrapCatalog } = useApp();
   const [targetProgress, setTargetProgress] = useState(0);
   const [displayProgress, setDisplayProgress] = useState(0);
@@ -43,6 +47,32 @@ export function SplashScreen() {
     const minTimer = window.setTimeout(() => setMinTimeDone(true), SPLASH_MIN_MS);
     return () => clearTimeout(minTimer);
   }, []);
+
+  useEffect(() => {
+    if (!staff?.id || !branchKey || !isPushConfiguredForBranch(branchKey)) return undefined;
+    if (Notification.permission !== 'default') return undefined;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((resolve) => setTimeout(resolve, 2500)),
+          ]);
+        }
+        if (cancelled || Notification.permission !== 'default') return;
+        await requestPushOnAppEntry(branchKey, staff.id);
+      } catch {
+        /* MainScreen yedek akışı devreye girer */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [staff?.id, branchKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,7 +139,7 @@ export function SplashScreen() {
 
   return (
     <div
-      className="relative min-h-dvh overflow-hidden text-slate-900 safe-top safe-bottom animate-splash-fade"
+      className="fixed inset-0 overflow-hidden text-slate-900 animate-splash-fade"
       style={{
         background: `linear-gradient(180deg, ${accentLight} 0%, #ffffff 38%, #f8fafc 100%)`,
       }}
@@ -128,13 +158,13 @@ export function SplashScreen() {
         }}
       />
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-48 opacity-80"
+        className="pointer-events-none absolute inset-x-0 top-0 h-56 opacity-80"
         style={{
           background: `linear-gradient(180deg, ${accent}14 0%, transparent 100%)`,
         }}
       />
 
-      <div className="relative z-10 flex min-h-dvh flex-col items-center justify-center px-8 pb-10">
+      <div className="relative z-10 flex min-h-full flex-col items-center justify-center px-8 pt-[env(safe-area-inset-top,0px)] pb-[max(2.5rem,env(safe-area-inset-bottom,0px))]">
         <div
           className="relative animate-splash-scale"
           style={{ width: 'min(56vw, 240px)', height: 'min(56vw, 240px)' }}

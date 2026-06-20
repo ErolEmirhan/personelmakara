@@ -1,12 +1,15 @@
 import { getApps } from 'firebase/app';
 import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
 import {
+  fetchAdminPushTokens,
   fetchBranchPushTokens,
   getStaffPushRegistrationStatus,
   pruneInvalidPushTokens,
   saveStaffPushToken,
+  fetchStaffPushTokens,
 } from './firebaseService';
 import { formatPushNotificationDisplay } from '../utils/pushDisplayFormat';
+import { supportCategoryLabel } from '../constants/supportTickets';
 
 const VAPID_BY_BRANCH = {
   makara: import.meta.env.VITE_FCM_VAPID_KEY_MAKARA,
@@ -14,11 +17,11 @@ const VAPID_BY_BRANCH = {
 
 const PUSH_REGISTERED_KEY = 'makara_push_registered';
 const PUSH_TOKEN_KEY = 'makara_push_fcm_token';
-const PUSH_ENTRY_PROMPT_KEY = 'makara_push_entry_prompted';
 const PUSH_STATUS_CHECK_KEY = 'makara_push_status_checked_at';
 const PUSH_STATUS_CHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 let foregroundHandlerAttached = false;
+let pushPromptInFlight = false;
 
 function apiUrl(path) {
   const root = import.meta.env.BASE_URL.replace(/\/?$/, '/');
@@ -221,7 +224,7 @@ export async function syncStaffPushToken(branchKey, staffId) {
   return registerStaffPushNotifications(branchKey, staffId);
 }
 
-/** Uygulama açılışında izin henüz sorulmadıysa bildirim izni ister ve cihazı kaydeder */
+/** Uygulama açılışında bildirim izni henüz verilmediyse hemen sorar ve cihazı kaydeder */
 export async function requestPushOnAppEntry(branchKey, staffId) {
   if (!staffId || !isPushConfiguredForBranch(branchKey)) {
     return { ok: false, reason: 'unsupported_branch' };
@@ -245,16 +248,16 @@ export async function requestPushOnAppEntry(branchKey, staffId) {
     return registerStaffPushNotifications(branchKey, staffId);
   }
 
-  try {
-    if (sessionStorage.getItem(PUSH_ENTRY_PROMPT_KEY)) {
-      return { ok: false, reason: 'already_prompted' };
-    }
-    sessionStorage.setItem(PUSH_ENTRY_PROMPT_KEY, '1');
-  } catch {
-    /* ignore */
+  if (pushPromptInFlight) {
+    return { ok: false, reason: 'in_flight' };
   }
 
-  return registerStaffPushNotifications(branchKey, staffId);
+  pushPromptInFlight = true;
+  try {
+    return await registerStaffPushNotifications(branchKey, staffId);
+  } finally {
+    pushPromptInFlight = false;
+  }
 }
 
 function attachForegroundMessageHandler(messaging) {
@@ -284,9 +287,11 @@ function showLocalNotification(customTitle, message, data = {}) {
   const { title, body } = formatPushNotificationDisplay(customTitle, message);
   const base = import.meta.env.BASE_URL || '/';
   const icon = new URL('icons/icon-192.png', `${window.location.origin}${base}`).href;
-  const tag = data?.announcementId
-    ? `makara-announcement-${data.announcementId}`
-    : 'makara-staff-announcement';
+  const tag = data?.ticketId
+    ? `makara-support-${data.ticketId}`
+    : data?.announcementId
+      ? `makara-announcement-${data.announcementId}`
+      : 'makara-staff-announcement';
 
   try {
     if ('serviceWorker' in navigator) {
@@ -361,6 +366,66 @@ export async function sendAnnouncementPush({ branchKey, staffId, title, message,
       message,
       announcementId,
       tokens,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Push API hatası');
+  }
+
+  if (data.invalidTokens?.length) {
+    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
+  }
+
+  return data;
+}
+
+export async function notifySupportMessagePush({
+  branchKey,
+  ticketId,
+  category,
+  messageText,
+  senderStaffId,
+  senderIsAdmin,
+  senderName,
+  recipientStaffId,
+}) {
+  if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
+
+  let tokens = [];
+  if (senderIsAdmin) {
+    if (recipientStaffId != null) {
+      tokens = await fetchStaffPushTokens(recipientStaffId);
+    }
+  } else {
+    tokens = await fetchAdminPushTokens(branchKey);
+  }
+
+  const senderTokens = await fetchStaffPushTokens(senderStaffId);
+  const exclude = new Set(senderTokens);
+  tokens = [...new Set(tokens)].filter((t) => !exclude.has(t));
+
+  if (!tokens.length) return { sent: 0 };
+
+  const categoryLabel = supportCategoryLabel(category);
+  const title = senderIsAdmin
+    ? 'Destek · Admin yanıtı'
+    : `Destek · ${(senderName || 'Personel').trim()}`;
+  const headline = senderIsAdmin ? title : `${title} · ${categoryLabel}`;
+  const preview = (messageText || '').trim();
+  const message = preview.length > 160 ? `${preview.slice(0, 157)}…` : preview;
+
+  const res = await fetch(apiUrl('api/push-announcement'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      branchKey,
+      title: headline,
+      message,
+      tokens,
+      pushType: 'staff_support',
+      ticketId,
     }),
   });
 

@@ -54,10 +54,23 @@ export function MainScreen() {
       setMainTab(MAIN_TABS.NOTIFICATIONS);
       window.history.replaceState({}, '', window.location.pathname);
     }
+    if (params.get('open') === 'support') {
+      window.dispatchEvent(
+        new CustomEvent('makara-open-support', {
+          detail: { ticketId: params.get('ticket') || null },
+        })
+      );
+      window.history.replaceState({}, '', window.location.pathname);
+    }
 
     let cancelled = false;
     (async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      if ('serviceWorker' in navigator) {
+        await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((resolve) => setTimeout(resolve, 1500)),
+        ]);
+      }
       if (cancelled) return;
 
       const result = await requestPushOnAppEntry(branchKey, staff.id);
@@ -71,14 +84,32 @@ export function MainScreen() {
       if (event.data?.type === 'OPEN_NOTIFICATIONS') {
         setMainTab(MAIN_TABS.NOTIFICATIONS);
       }
+      if (event.data?.type === 'OPEN_SUPPORT') {
+        window.dispatchEvent(
+          new CustomEvent('makara-open-support', {
+            detail: { ticketId: event.data.ticketId || null },
+          })
+        );
+      }
     };
     navigator.serviceWorker?.addEventListener('message', onSwMessage);
 
     const onPushMessage = (event) => {
       const detail = event.detail || {};
+      const data = detail.data || {};
+      if (data.type === 'staff_support') {
+        setIncomingPush({
+          title: detail.title || 'Destek mesajı',
+          body: detail.body || '',
+          kind: 'support',
+          ticketId: data.ticketId || null,
+        });
+        return;
+      }
       setIncomingPush({
         title: detail.title || 'Bildirim',
         body: detail.body || '',
+        kind: 'notification',
       });
     };
     window.addEventListener('makara-push-message', onPushMessage);
@@ -89,6 +120,19 @@ export function MainScreen() {
       window.removeEventListener('makara-push-message', onPushMessage);
     };
   }, [staff?.id, branchKey, setMainTab]);
+
+  useEffect(() => {
+    if (!staff?.id || !branchKey || !isPushConfiguredForBranch(branchKey)) return undefined;
+
+    const retryIfNeeded = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Notification.permission !== 'default') return;
+      requestPushOnAppEntry(branchKey, staff.id);
+    };
+
+    document.addEventListener('visibilitychange', retryIfNeeded);
+    return () => document.removeEventListener('visibilitychange', retryIfNeeded);
+  }, [staff?.id, branchKey]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -119,7 +163,15 @@ export function MainScreen() {
           title={incomingPush.title}
           body={incomingPush.body}
           onOpen={() => {
-            setMainTab(MAIN_TABS.NOTIFICATIONS);
+            if (incomingPush.kind === 'support') {
+              window.dispatchEvent(
+                new CustomEvent('makara-open-support', {
+                  detail: { ticketId: incomingPush.ticketId || null },
+                })
+              );
+            } else {
+              setMainTab(MAIN_TABS.NOTIFICATIONS);
+            }
             setIncomingPush(null);
           }}
           onDismiss={() => setIncomingPush(null)}

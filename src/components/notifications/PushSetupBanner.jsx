@@ -46,7 +46,7 @@ export async function resolvePushSetupMessage(branchKey, staffId, entryResult) {
     return '';
   }
 
-  if (entryResult && !entryResult.ok && entryResult.reason !== 'already_prompted') {
+  if (entryResult && !entryResult.ok && entryResult.reason !== 'in_flight') {
     return pushRegistrationErrorMessage(entryResult.reason, entryResult.error);
   }
 

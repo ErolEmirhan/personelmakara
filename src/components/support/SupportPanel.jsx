@@ -44,6 +44,14 @@ function BackIcon() {
   );
 }
 
+function CloseIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
 function TicketStatusBadge({ status }) {
   if (status === SUPPORT_STATUS.RESOLVED) {
     return (
@@ -347,7 +355,7 @@ export function SupportFlagButton({ onClick, badgeCount = 0 }) {
   );
 }
 
-export function SupportPanel({ open, onClose }) {
+export function SupportPanel({ open, onClose, initialTicketId = null }) {
   const { staff } = useAuth();
   const { theme, branchKey } = useBranch();
   const isAdmin = isStaffAdmin(staff);
@@ -374,6 +382,12 @@ export function SupportPanel({ open, onClose }) {
     setNewText('');
     setError('');
 
+    try {
+      history.pushState({ makaraSupport: true }, '');
+    } catch {
+      /* ignore */
+    }
+
     const unsub = isAdmin
       ? subscribeBranchSupportTickets(branchKey, setTickets)
       : subscribeStaffSupportTickets(staff.id, setTickets);
@@ -395,6 +409,17 @@ export function SupportPanel({ open, onClose }) {
     if (fresh) setSelectedTicket(fresh);
   }, [tickets, selectedTicket?.id]);
 
+  useEffect(() => {
+    if (!open || !initialTicketId || !tickets.length) return;
+    const ticket = tickets.find((t) => t.id === initialTicketId);
+    if (ticket) {
+      setSelectedTicket(ticket);
+      setView('chat');
+      setDraft('');
+      setError('');
+    }
+  }, [open, initialTicketId, tickets]);
+
   const filteredTickets = useMemo(() => {
     if (!isAdmin) return tickets;
     if (adminTab === 'open') {
@@ -408,20 +433,13 @@ export function SupportPanel({ open, onClose }) {
       setView(isAdmin ? 'list' : tickets.length > 0 ? 'list' : 'new');
       setSelectedTicket(null);
       setError('');
-      return true;
-    }
-    if (view === 'list' && !isAdmin) {
-      setView('new');
-      setError('');
-      return true;
-    }
-    if (view === 'new' && !isAdmin && tickets.length > 0) {
-      setView('list');
-      setError('');
-      return true;
+      return;
     }
     onClose();
-    return true;
+  };
+
+  const handleClose = () => {
+    onClose();
   };
 
   useBackHandler(open, handleBack);
@@ -507,53 +525,67 @@ export function SupportPanel({ open, onClose }) {
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-[#f4f6fa]" role="dialog" aria-modal="true">
       <div className="shrink-0 pt-[env(safe-area-inset-top,0px)] bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-[0_8px_30px_-24px_rgba(15,23,42,0.12)]">
-        <div className="flex items-center gap-3 px-4 h-14">
+        <div className="relative flex items-center justify-between px-4 h-14">
           <button
             type="button"
             onClick={handleBack}
-            className="shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 flex items-center justify-center text-slate-600 active:scale-95 transition-transform"
-            aria-label="Geri"
+            className="relative z-10 shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 flex items-center justify-center text-slate-600 active:scale-95 transition-transform"
+            aria-label={view === 'chat' ? 'Geri' : 'Uygulamaya dön'}
           >
             <BackIcon />
           </button>
 
-          <div className="flex-1 min-w-0 flex items-center gap-2.5">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0"
-              style={{ background: `linear-gradient(135deg, ${accentSolid}, ${accentSolid}bb)` }}
-            >
-              <FlagIcon className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="font-display font-bold text-base text-slate-900 truncate leading-tight">
-                {headerTitle}
-              </h2>
-              {headerSubtitle && (
-                <p className="text-[11px] text-slate-500 truncate">{headerSubtitle}</p>
-              )}
+          <div className="pointer-events-none absolute inset-x-0 flex justify-center px-[calc(5rem+1rem)]">
+            <div className="min-w-0 flex items-center gap-2.5 max-w-full">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0"
+                style={{ background: `linear-gradient(135deg, ${accentSolid}, ${accentSolid}bb)` }}
+              >
+                <FlagIcon className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 text-center">
+                <h2 className="font-display font-bold text-base text-slate-900 truncate leading-tight">
+                  {headerTitle}
+                </h2>
+                {headerSubtitle && (
+                  <p className="text-[11px] text-slate-500 truncate">{headerSubtitle}</p>
+                )}
+              </div>
             </div>
           </div>
 
-          {view === 'new' && !isAdmin && tickets.length > 0 && (
-            <button
-              type="button"
-              onClick={() => { setView('list'); setError(''); }}
-              className="shrink-0 text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 active:scale-95 transition-transform"
-            >
-              Geçmiş
-            </button>
-          )}
+          <div className="relative z-10 flex items-center gap-2 shrink-0">
+            {view === 'new' && !isAdmin && tickets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setView('list'); setError(''); }}
+                className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 text-slate-600 active:scale-95 transition-transform"
+              >
+                Geçmiş
+              </button>
+            )}
 
-          {view === 'list' && !isAdmin && (
+            {view === 'list' && !isAdmin && (
+              <button
+                type="button"
+                onClick={() => { setView('new'); setError(''); }}
+                className="text-xs font-bold px-3 py-2 rounded-xl text-white active:scale-95 transition-transform"
+                style={{ background: accentSolid }}
+              >
+                Yeni
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => { setView('new'); setError(''); }}
-              className="shrink-0 text-xs font-bold px-3 py-2 rounded-xl text-white active:scale-95 transition-transform"
-              style={{ background: accentSolid }}
+              onClick={handleClose}
+              className="shrink-0 w-10 h-10 rounded-2xl bg-slate-100/90 flex items-center justify-center text-slate-600 active:scale-95 transition-transform"
+              aria-label="Kapat"
+              title="Uygulamaya dön"
             >
-              Yeni
+              <CloseIcon />
             </button>
-          )}
+          </div>
         </div>
 
         {view === 'list' && isAdmin && (
