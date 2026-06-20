@@ -24,14 +24,9 @@ firebase.initializeApp({
 
 function parsePushPayload(payload) {
   const data = payload?.data || {};
-  return {
-    title:
-      payload?.notification?.title ||
-      data.title ||
-      'MAKARA · Ekip bildirimi',
-    body: payload?.notification?.body || data.body || '',
-    data,
-  };
+  const title = payload?.notification?.title || data.title || 'MAKARA';
+  const body = payload?.notification?.body || data.body || '';
+  return { title, body, data };
 }
 
 function showPushNotification(title, body, data) {
@@ -39,8 +34,12 @@ function showPushNotification(title, body, data) {
   const tag = data?.announcementId
     ? `makara-announcement-${data.announcementId}`
     : 'makara-staff-announcement';
+
+  // Başlık zaten gövdede tekrarlanmasın (yönetici başlık + mesaj gönderince)
+  const displayBody = body && body !== title ? body : (body || title);
+
   return self.registration.showNotification(title, {
-    body,
+    body: displayBody,
     icon,
     badge: icon,
     tag,

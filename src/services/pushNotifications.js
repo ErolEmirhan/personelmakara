@@ -285,13 +285,14 @@ function showLocalNotification(title, body, data = {}) {
   const tag = data?.announcementId
     ? `makara-announcement-${data.announcementId}`
     : 'makara-staff-announcement';
+  const displayBody = body && body !== title ? body : (body || title);
 
   try {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready
         .then((registration) => {
           registration.showNotification(title, {
-            body,
+            body: displayBody,
             icon,
             badge: icon,
             tag,
@@ -299,11 +300,11 @@ function showLocalNotification(title, body, data = {}) {
           });
         })
         .catch(() => {
-          new Notification(title, { body, icon, tag, data });
+          new Notification(title, { body: displayBody, icon, tag, data });
         });
       return;
     }
-    new Notification(title, { body, icon, tag, data });
+    new Notification(title, { body: displayBody, icon, tag, data });
   } catch {
     /* iOS PWA ön planda sistem bildirimi engelleyebilir */
   }

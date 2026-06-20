@@ -25,9 +25,9 @@ export default defineConfig(({ mode }) => ({
       },
       includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png', 'makara.png'],
       manifest: {
-        name: 'MAKARA Mobil Sipariş',
-        short_name: 'MAKARA Personel',
-        description: 'MAKARA Satış Sistemi - Mobil Personel Arayüzü',
+        name: 'MAKARA',
+        short_name: 'MAKARA',
+        description: 'MAKARA personel mobil arayüzü',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
