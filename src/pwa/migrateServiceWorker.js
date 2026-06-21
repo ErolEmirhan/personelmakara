@@ -1,12 +1,41 @@
 const APP_VERSION_KEY = 'makara-app-version';
 const MIGRATION_RELOAD_KEY = 'makara-cache-migrated';
 
-/** Eski /mobile/ SW veya sürüm değişiminde bozuk PWA önbelleğini temizler */
-export async function migrateServiceWorkerCache(appVersion) {
-  if (!('serviceWorker' in navigator)) return;
+function readStoredVersion() {
+  try {
+    return localStorage.getItem(APP_VERSION_KEY);
+  } catch {
+    return null;
+  }
+}
 
+function writeStoredVersion(version) {
+  try {
+    localStorage.setItem(APP_VERSION_KEY, version);
+  } catch {
+    /* iOS gizli sekme / depolama kapalı */
+  }
+}
+
+function readBuildVersionFromDom() {
+  const meta = document.querySelector('meta[name="makara-build"]');
+  return meta?.getAttribute('content') || null;
+}
+
+function resolveAppVersion(fallbackVersion) {
+  return readBuildVersionFromDom() || fallbackVersion || 'unknown';
+}
+
+/** Eski /mobile/ SW veya sürüm değişiminde bozuk PWA önbelleğini temizler */
+export async function migrateServiceWorkerCache(fallbackVersion) {
+  if (!('serviceWorker' in navigator)) {
+    writeStoredVersion(resolveAppVersion(fallbackVersion));
+    return;
+  }
+
+  const appVersion = resolveAppVersion(fallbackVersion);
   const forceReset = new URLSearchParams(window.location.search).get('reset-sw') === '1';
-  const previousVersion = localStorage.getItem(APP_VERSION_KEY);
+  const previousVersion = readStoredVersion();
   const versionChanged = previousVersion && previousVersion !== appVersion;
 
   const registrations = await navigator.serviceWorker.getRegistrations();
@@ -18,7 +47,7 @@ export async function migrateServiceWorkerCache(appVersion) {
 
   const shouldReset = forceReset || versionChanged || hasLegacyScope;
   if (!shouldReset) {
-    localStorage.setItem(APP_VERSION_KEY, appVersion);
+    writeStoredVersion(appVersion);
     return;
   }
 
@@ -29,15 +58,18 @@ export async function migrateServiceWorkerCache(appVersion) {
     await Promise.all(keys.map((key) => caches.delete(key)));
   }
 
-  localStorage.setItem(APP_VERSION_KEY, appVersion);
+  writeStoredVersion(appVersion);
 
-  if (!sessionStorage.getItem(MIGRATION_RELOAD_KEY)) {
-    sessionStorage.setItem(MIGRATION_RELOAD_KEY, '1');
+  try {
+    if (!sessionStorage.getItem(MIGRATION_RELOAD_KEY)) {
+      sessionStorage.setItem(MIGRATION_RELOAD_KEY, '1');
+      window.location.replace(stripResetParam(window.location.href));
+      return;
+    }
+    sessionStorage.removeItem(MIGRATION_RELOAD_KEY);
+  } catch {
     window.location.replace(stripResetParam(window.location.href));
-    return;
   }
-
-  sessionStorage.removeItem(MIGRATION_RELOAD_KEY);
 }
 
 function stripResetParam(url) {

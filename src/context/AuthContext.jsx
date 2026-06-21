@@ -29,10 +29,14 @@ export function AuthProvider({ children }) {
   const [loggingIn, setLoggingIn] = useState(false);
 
   const saveSession = useCallback((staffData, rememberMe) => {
-    localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({ staff: staffData, timestamp: Date.now(), rememberMe })
-    );
+    try {
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ staff: staffData, timestamp: Date.now(), rememberMe })
+      );
+    } catch {
+      /* iOS gizli sekme vb. */
+    }
   }, []);
 
   const updateStaff = useCallback((updates) => {

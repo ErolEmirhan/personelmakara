@@ -16,6 +16,12 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     localApiPlugin(mode),
+    {
+      name: 'makara-build-version',
+      transformIndexHtml(html) {
+        return html.replaceAll('__MAKARA_BUILD_VERSION__', appVersion);
+      },
+    },
     legacy({
       targets: ['Android >= 5', 'Chrome >= 63', 'iOS >= 12', 'not IE 11'],
       modernPolyfills: true,

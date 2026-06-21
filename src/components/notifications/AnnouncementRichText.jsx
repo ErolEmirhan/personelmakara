@@ -1,34 +1,37 @@
 import { useMemo } from 'react';
 
-const MENTION_REGEX = /@(destek)\b/gi;
-
 function splitMentions(text) {
-  if (!text) return [{ type: 'text', text: '' }];
+  if (text == null || text === '') return [{ type: 'text', text: '' }];
+  const source = typeof text === 'string' ? text : String(text);
 
   const parts = [];
+  const regex = /@(destek)\b/gi;
   let lastIndex = 0;
-  let match = MENTION_REGEX.exec(text);
+  let match = regex.exec(source);
 
   while (match) {
     if (match.index > lastIndex) {
-      parts.push({ type: 'text', text: text.slice(lastIndex, match.index) });
+      parts.push({ type: 'text', text: source.slice(lastIndex, match.index) });
     }
-    parts.push({
-      type: 'mention',
-      key: match[1].toLowerCase(),
-      label: match[0],
-    });
+    const key = match[1]?.toLowerCase();
+    if (key) {
+      parts.push({
+        type: 'mention',
+        key,
+        label: match[0],
+      });
+    } else {
+      parts.push({ type: 'text', text: match[0] });
+    }
     lastIndex = match.index + match[0].length;
-    match = MENTION_REGEX.exec(text);
+    match = regex.exec(source);
   }
 
-  MENTION_REGEX.lastIndex = 0;
-
-  if (lastIndex < text.length) {
-    parts.push({ type: 'text', text: text.slice(lastIndex) });
+  if (lastIndex < source.length) {
+    parts.push({ type: 'text', text: source.slice(lastIndex) });
   }
 
-  return parts.length ? parts : [{ type: 'text', text }];
+  return parts.length ? parts : [{ type: 'text', text: source }];
 }
 
 function openSupportFromMention() {

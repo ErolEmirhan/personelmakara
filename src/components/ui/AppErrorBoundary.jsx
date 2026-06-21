@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { isChunkLoadError, redirectToCacheReset } from '../../utils/chunkLoadRecovery';
 
 export class AppErrorBoundary extends Component {
   constructor(props) {
@@ -12,11 +13,13 @@ export class AppErrorBoundary extends Component {
 
   componentDidCatch(error) {
     console.error('App render error:', error);
+    if (isChunkLoadError(error?.message || String(error))) {
+      redirectToCacheReset();
+    }
   }
 
   handleReset = () => {
-    const base = window.location.pathname || '/';
-    window.location.href = `${base}?reset-sw=1`;
+    redirectToCacheReset();
   };
 
   render() {
@@ -29,8 +32,14 @@ export class AppErrorBoundary extends Component {
         </div>
         <h1 className="font-bold text-lg mb-2">Bir hata oluştu</h1>
         <p className="text-sm text-slate-500 leading-relaxed max-w-xs mb-6">
-          Uygulama beklenmedik şekilde durdu. Önbelleği temizleyip yeniden deneyin; mümkünse Chrome kullanın.
+          Uygulama beklenmedik şekilde durdu. Bu genelde eski önbellekten kaynaklanır.
+          Aşağıdaki düğmeyle önbelleği temizleyip yeniden deneyin.
         </p>
+        {this.state.error?.message && (
+          <p className="text-[11px] text-slate-400 leading-relaxed max-w-xs mb-4 font-mono break-all">
+            {this.state.error.message}
+          </p>
+        )}
         <button
           type="button"
           onClick={this.handleReset}

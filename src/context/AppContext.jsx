@@ -164,12 +164,17 @@ export function AppProvider({ children }) {
     }
 
     const updateUnread = (list) => {
-      if (mainTabRef.current === MAIN_TABS.NOTIFICATIONS) {
+      try {
+        if (mainTabRef.current === MAIN_TABS.NOTIFICATIONS) {
+          setUnreadAnnouncementCount(0);
+          return;
+        }
+        const lastVisit = getLastNotificationsVisit(branchKey, staff.id);
+        setUnreadAnnouncementCount(countUnreadAnnouncements(list, staff.id, lastVisit));
+      } catch (err) {
+        console.warn('Unread announcement count failed:', err);
         setUnreadAnnouncementCount(0);
-        return;
       }
-      const lastVisit = getLastNotificationsVisit(branchKey, staff.id);
-      setUnreadAnnouncementCount(countUnreadAnnouncements(list, staff.id, lastVisit));
     };
 
     return subscribeStaffAnnouncements(branchKey, updateUnread);

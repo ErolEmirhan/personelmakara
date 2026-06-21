@@ -30,6 +30,10 @@ export function initPwaUpdates() {
       onRegisterError(error) {
         console.warn('Service worker kaydı başarısız:', error);
       },
+      onOfflineReady() {},
+      onNeedRefresh() {
+        window.location.reload();
+      },
     });
   } catch (error) {
     console.warn('Service worker başlatılamadı:', error);

@@ -6,6 +6,9 @@ import { AppErrorBoundary } from './components/ui/AppErrorBoundary';
 import { lockViewportZoom } from './utils/disableZoom';
 import { migrateServiceWorkerCache } from './pwa/migrateServiceWorker';
 import { initPwaUpdates } from './pwa/registerUpdates';
+import { installChunkLoadRecovery, isChunkLoadError, redirectToCacheReset } from './utils/chunkLoadRecovery';
+
+installChunkLoadRecovery();
 
 async function boot() {
   await migrateServiceWorkerCache(__APP_VERSION__);
@@ -29,4 +32,7 @@ async function boot() {
 
 boot().catch((err) => {
   console.error('Boot failed:', err);
+  if (isChunkLoadError(err?.message || String(err))) {
+    redirectToCacheReset();
+  }
 });
