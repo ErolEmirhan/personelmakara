@@ -8,6 +8,31 @@ import { BRANCH_FIREBASE } from './config/firebase';
 self.skipWaiting();
 clientsClaim();
 
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim();
+      const clients = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      clients.forEach((client) => {
+        client.postMessage({ type: 'MAKARA_SW_ACTIVATED' });
+      });
+    })()
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 

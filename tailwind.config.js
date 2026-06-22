@@ -41,6 +41,8 @@ export default {
         'table-glow': 'tableGlow 3.2s ease-in-out infinite',
         'add-pulse': 'addPulse 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
         'success-ripple': 'successRipple 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'update-orbit': 'updateOrbit 2.8s linear infinite',
+        'update-glow': 'updateGlow 2.4s ease-in-out infinite',
         'slide-in-right': 'slideInRight 0.42s cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-out-right': 'slideOutRight 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards',
         'fade-out': 'fadeOut 0.38s ease-in forwards',
@@ -95,6 +97,14 @@ export default {
         successRipple: {
           '0%': { boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.45)' },
           '100%': { boxShadow: '0 0 0 18px rgba(16, 185, 129, 0)' },
+        },
+        updateOrbit: {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        updateGlow: {
+          '0%, 100%': { opacity: '0.45', transform: 'scale(1)' },
+          '50%': { opacity: '0.85', transform: 'scale(1.06)' },
         },
         slideInRight: {
           '0%': { opacity: '0', transform: 'translateX(100%)' },

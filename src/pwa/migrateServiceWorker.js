@@ -1,3 +1,5 @@
+import { signalAppUpdating } from './updateSplash';
+
 const APP_VERSION_KEY = 'makara-app-version';
 const MIGRATION_RELOAD_KEY = 'makara-cache-migrated';
 
@@ -63,11 +65,13 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
   try {
     if (!sessionStorage.getItem(MIGRATION_RELOAD_KEY)) {
       sessionStorage.setItem(MIGRATION_RELOAD_KEY, '1');
+      signalAppUpdating();
       window.location.replace(stripResetParam(window.location.href));
       return;
     }
     sessionStorage.removeItem(MIGRATION_RELOAD_KEY);
   } catch {
+    signalAppUpdating();
     window.location.replace(stripResetParam(window.location.href));
   }
 }

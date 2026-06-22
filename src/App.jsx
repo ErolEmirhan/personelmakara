@@ -5,6 +5,7 @@ import { BranchSetup } from './components/auth/BranchSetup';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { SplashScreen } from './components/auth/SplashScreen';
 import { MainScreen } from './screens/MainScreen';
+import { AppUpdateHost } from './components/ui/AppUpdateHost';
 
 function AppRouter() {
   const { configured, connecting } = useBranch();
@@ -28,6 +29,7 @@ function AppRouter() {
 export default function App() {
   return (
     <BranchProvider>
+      <AppUpdateHost />
       <AuthProvider>
         <AppProvider>
           <AppRouter />

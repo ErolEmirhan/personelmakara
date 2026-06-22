@@ -28,6 +28,7 @@ async function boot() {
   );
 
   window.__makaraMarkBootOk?.();
+  window.dispatchEvent(new CustomEvent('makara-boot-complete'));
 }
 
 boot().catch((err) => {
