@@ -9,6 +9,7 @@ import {
   submitMobileOrder,
   setStaffPresenceViewingTable,
   subscribeStaffAnnouncements,
+  subscribeCatalog,
 } from '../services/firebaseService';
 import { resolveProductImages } from '../services/productImageCache';
 import { getCatalogCache, setCatalogCache } from '../services/catalogCache';
@@ -48,6 +49,8 @@ export function AppProvider({ children }) {
   const [cartBump, setCartBump] = useState(0);
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const tablesUnsubRef = useRef(null);
+  const catalogUnsubRef = useRef(null);
+  const catalogSyncTimerRef = useRef(null);
   const orderItemsUnsubRef = useRef(null);
   const mainTabRef = useRef(mainTab);
   const backHandlersRef = useRef([]);
@@ -102,6 +105,28 @@ export function AppProvider({ children }) {
     }
   }, [configured, branchKey, showToast]);
 
+  const applyCatalogFromFirestore = useCallback(async (catalog) => {
+    if (!branchKey || !catalog) return;
+    try {
+      const withImages = await resolveProductImages(branchKey, catalog.products || []);
+      setCategories(catalog.categories || []);
+      setProducts(withImages);
+      await setCatalogCache(branchKey, {
+        categories: catalog.categories || [],
+        products: withImages,
+      });
+      setSelectedCategory((prev) => {
+        const cats = catalog.categories || [];
+        if (prev != null && cats.some((c) => c.id === prev)) return prev;
+        return cats[0]?.id ?? null;
+      });
+    } catch (err) {
+      console.warn('Katalog senkronu başarısız:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [branchKey]);
+
   const bootstrapCatalog = useCallback(async (onProgress) => {
     const report = (value) => onProgress?.(Math.min(100, Math.max(0, value)));
     if (!configured || !branchKey) {
@@ -152,6 +177,27 @@ export function AppProvider({ children }) {
       unsubBroadcasts();
     };
   }, [configured, branchKey]);
+
+  useEffect(() => {
+    if (!configured || !branchKey) return undefined;
+
+    if (catalogUnsubRef.current) catalogUnsubRef.current();
+    if (catalogSyncTimerRef.current) clearTimeout(catalogSyncTimerRef.current);
+
+    catalogUnsubRef.current = subscribeCatalog((catalog) => {
+      if (catalogSyncTimerRef.current) clearTimeout(catalogSyncTimerRef.current);
+      catalogSyncTimerRef.current = window.setTimeout(() => {
+        applyCatalogFromFirestore(catalog);
+      }, 200);
+    });
+
+    return () => {
+      if (catalogUnsubRef.current) catalogUnsubRef.current();
+      catalogUnsubRef.current = null;
+      if (catalogSyncTimerRef.current) clearTimeout(catalogSyncTimerRef.current);
+      catalogSyncTimerRef.current = null;
+    };
+  }, [configured, branchKey, applyCatalogFromFirestore]);
 
   useEffect(() => {
     mainTabRef.current = mainTab;

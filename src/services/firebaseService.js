@@ -309,8 +309,12 @@ export async function updateStaffMemberProfile(staffId, { name, surname, passwor
 
 export async function fetchCategories() {
   const snap = await getDocs(collection(requireMainDb(), 'categories'));
+  return mapCategoryDocs(snap.docs);
+}
+
+function mapCategoryDocs(docs) {
   let cats = [];
-  snap.forEach((d) => {
+  docs.forEach((d) => {
     const c = d.data();
     cats.push({
       id: typeof c.id === 'string' ? parseInt(c.id, 10) : c.id,
@@ -331,6 +335,36 @@ export async function fetchCategories() {
   return cats;
 }
 
+function resolveProductId(docSnap, data) {
+  if (data.id != null && data.id !== '') {
+    return typeof data.id === 'string' ? parseInt(data.id, 10) : data.id;
+  }
+  const fromDocId = Number(docSnap.id);
+  if (Number.isFinite(fromDocId)) return fromDocId;
+  return docSnap.id;
+}
+
+function mapProductDocs(docs, categoryId) {
+  let products = [];
+  docs.forEach((d) => {
+    const p = d.data();
+    const id = resolveProductId(d, p);
+    products.push({
+      id,
+      name: p.name || '',
+      price: Number(p.price) || 0,
+      category_id: typeof p.category_id === 'string' ? parseInt(p.category_id, 10) : p.category_id,
+      imageRaw: extractProductImageRaw(p),
+      stock: p.stock,
+      trackStock: p.trackStock || p.track_stock || false,
+    });
+  });
+  if (categoryId) {
+    products = products.filter((p) => p.category_id === categoryId);
+  }
+  return products;
+}
+
 /** Firestore ürün dokümanından görsel ham verisini çıkarır */
 export function extractProductImageRaw(p) {
   if (!p) return null;
@@ -347,24 +381,58 @@ export function extractProductImageRaw(p) {
 
 export async function fetchProducts(categoryId) {
   const snap = await getDocs(collection(requireMainDb(), 'products'));
+  return mapProductDocs(snap.docs, categoryId);
+}
+
+/** Kasa/masaüstünden eklenen ürünler dahil katalog canlı senkronu */
+export function subscribeCatalog(onUpdate) {
+  if (!isFirebaseReady()) return () => {};
+
+  const db = requireMainDb();
+  let categories = [];
   let products = [];
-  snap.forEach((d) => {
-    const p = d.data();
-    const id = typeof p.id === 'string' ? parseInt(p.id, 10) : p.id;
-    products.push({
-      id,
-      name: p.name || '',
-      price: Number(p.price) || 0,
-      category_id: typeof p.category_id === 'string' ? parseInt(p.category_id, 10) : p.category_id,
-      imageRaw: extractProductImageRaw(p),
-      stock: p.stock,
-      trackStock: p.trackStock || p.track_stock || false,
-    });
-  });
-  if (categoryId) {
-    products = products.filter((p) => p.category_id === categoryId);
-  }
-  return products;
+  let hasCategories = false;
+  let hasProducts = false;
+
+  const emit = () => {
+    if (!hasCategories || !hasProducts) return;
+    onUpdate({ categories, products });
+  };
+
+  const unsubCategories = onSnapshot(
+    collection(db, 'categories'),
+    (snap) => {
+      categories = mapCategoryDocs(snap.docs);
+      hasCategories = true;
+      emit();
+    },
+    (err) => {
+      console.error('categories snapshot error:', err);
+      categories = [];
+      hasCategories = true;
+      emit();
+    }
+  );
+
+  const unsubProducts = onSnapshot(
+    collection(db, 'products'),
+    (snap) => {
+      products = mapProductDocs(snap.docs);
+      hasProducts = true;
+      emit();
+    },
+    (err) => {
+      console.error('products snapshot error:', err);
+      products = [];
+      hasProducts = true;
+      emit();
+    }
+  );
+
+  return () => {
+    unsubCategories();
+    unsubProducts();
+  };
 }
 
 export function subscribeTables(branchKey, onUpdate) {
