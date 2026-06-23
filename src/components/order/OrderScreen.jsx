@@ -6,7 +6,12 @@ import { canCancelOrderItem } from '../../config/branch';
 import { ProductCard } from './ProductCard';
 import { ExistingOrdersPanel } from './ExistingOrdersPanel';
 import { CancelItemModal } from '../modals/CancelItemModal';
+import { TurkishCoffeeChoiceModal } from '../modals/TurkishCoffeeChoiceModal';
 import { ProductGridSkeleton } from '../ui/Skeleton';
+import {
+  buildCoffeeDisplayName,
+  needsCoffeeSugarModal,
+} from '../../utils/productOptions';
 
 export function OrderScreen() {
   const { branchKey, theme } = useBranch();
@@ -14,9 +19,34 @@ export function OrderScreen() {
   const {
     categories, products, selectedCategory, setSelectedCategory,
     searchQuery, setSearchQuery, addToCart, goBackToTables,
-    currentOrderItems, loading, selectedTable,
+    currentOrderItems, loading, selectedTable, showToast,
   } = useApp();
   const [cancelItem, setCancelItem] = useState(null);
+  const [coffeeProduct, setCoffeeProduct] = useState(null);
+
+  const handleProductAdd = (product) => {
+    if (product.trackStock && product.stock <= 0) {
+      showToast('error', 'Tükendi', `${product.name} stokta yok`);
+      return;
+    }
+    if (needsCoffeeSugarModal(product.name)) {
+      setCoffeeProduct(product);
+      return;
+    }
+    addToCart(product);
+  };
+
+  const handleCoffeeSelect = (option) => {
+    if (!coffeeProduct) return;
+    if (coffeeProduct.trackStock && coffeeProduct.stock <= 0) {
+      showToast('error', 'Tükendi', `${coffeeProduct.name} stokta yok`);
+      setCoffeeProduct(null);
+      return;
+    }
+    const displayName = buildCoffeeDisplayName(coffeeProduct.name, option);
+    addToCart(coffeeProduct, { displayName });
+    setCoffeeProduct(null);
+  };
 
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
@@ -108,6 +138,13 @@ export function OrderScreen() {
         onClose={() => setCancelItem(null)}
       />
 
+      <TurkishCoffeeChoiceModal
+        open={!!coffeeProduct}
+        product={coffeeProduct}
+        onSelect={handleCoffeeSelect}
+        onClose={() => setCoffeeProduct(null)}
+      />
+
       {loading ? (
         <ProductGridSkeleton count={6} />
       ) : (
@@ -121,7 +158,7 @@ export function OrderScreen() {
               >
                 <ProductCard
                   product={product}
-                  onAdd={addToCart}
+                  onAdd={handleProductAdd}
                 />
               </div>
             ))}

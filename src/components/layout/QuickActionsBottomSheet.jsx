@@ -6,7 +6,9 @@ import { canMergeTable } from '../../config/branch';
 import { BottomSheet } from '../ui/BottomSheet';
 import { TransferTableModal } from '../modals/TransferTableModal';
 import { MergeTableModal } from '../modals/MergeTableModal';
+import { SalesRecordPanel } from '../sales/SalesRecordPanel';
 import { useBackHandler } from '../../hooks/useBackButton';
+import { canViewBreakfastSalesRecord } from '../../utils/staffRole';
 
 function ActionRow({ icon, iconStyle, title, description, onClick, disabled, loading, locked }) {
   return (
@@ -64,13 +66,16 @@ export function QuickActionsBottomSheet({ open, onClose }) {
   const { loadData, showToast } = useApp();
   const [showTransfer, setShowTransfer] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
+  const [showSalesRecord, setShowSalesRecord] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const accent = theme.accentSolid;
   const canMerge = canMergeTable(staff, branchKey);
+  const canSalesRecord = canViewBreakfastSalesRecord(staff);
 
   useBackHandler(showTransfer, () => setShowTransfer(false));
   useBackHandler(showMerge, () => setShowMerge(false));
+  useBackHandler(showSalesRecord, () => setShowSalesRecord(false));
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -100,6 +105,15 @@ export function QuickActionsBottomSheet({ open, onClose }) {
     setShowMerge(true);
   };
 
+  const openSalesRecord = () => {
+    if (!canSalesRecord) {
+      showToast('error', 'Yetki gerekli', 'Satış kaydı için yönetici yetkisi gerekir');
+      return;
+    }
+    onClose();
+    setShowSalesRecord(true);
+  };
+
   return (
     <>
       <BottomSheet
@@ -109,6 +123,20 @@ export function QuickActionsBottomSheet({ open, onClose }) {
         subtitle="Masa operasyonları ve veri yenileme"
       >
         <div className="px-5 py-5 pb-8 space-y-3">
+          {canSalesRecord && (
+            <ActionRow
+              title="Satış kaydı"
+              description="Kahvaltı kategorisi — gün gün ciro ve adet özeti"
+              iconStyle={{ backgroundColor: '#fff7ed', color: '#ea580c' }}
+              icon={(
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                </svg>
+              )}
+              onClick={openSalesRecord}
+            />
+          )}
+
           <ActionRow
             title="Masa aktar"
             description="Dolu masayı boş bir masaya taşıyın"
@@ -159,6 +187,7 @@ export function QuickActionsBottomSheet({ open, onClose }) {
 
       <TransferTableModal open={showTransfer} onClose={() => setShowTransfer(false)} />
       <MergeTableModal open={showMerge} onClose={() => setShowMerge(false)} />
+      <SalesRecordPanel open={showSalesRecord} onClose={() => setShowSalesRecord(false)} />
     </>
   );
 }

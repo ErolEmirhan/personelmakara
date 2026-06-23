@@ -435,6 +435,61 @@ export function subscribeCatalog(onUpdate) {
   };
 }
 
+function mapFirestoreSaleDoc(docSnap) {
+  const data = docSnap.data();
+  return {
+    firestoreId: docSnap.id,
+    sale_id: data.sale_id ?? null,
+    total_amount: data.total_amount ?? 0,
+    payment_method: data.payment_method ?? null,
+    sale_date: data.sale_date ?? null,
+    sale_time: data.sale_time ?? null,
+    staff_name: data.staff_name ?? null,
+    table_name: data.table_name ?? null,
+    table_order_id: data.table_order_id ?? null,
+    items: data.items ?? null,
+    items_array: Array.isArray(data.items_array) ? data.items_array : [],
+    created_at: data.created_at ?? null,
+  };
+}
+
+/** Masaüstü POS'un Firestore `sales` koleksiyonundan satış kayıtları */
+export async function fetchFirestoreSales(options = {}) {
+  const { limitCount = 2000 } = options;
+  const db = requireMainDb();
+  const salesCol = collection(db, 'sales');
+
+  try {
+    const q = query(salesCol, orderBy('created_at', 'desc'), limit(limitCount));
+    const snap = await getDocs(q);
+    return snap.docs.map(mapFirestoreSaleDoc);
+  } catch (err) {
+    console.warn('sales orderBy(created_at) başarısız, tam tarama deneniyor:', err);
+    const snap = await getDocs(salesCol);
+    const rows = snap.docs.map(mapFirestoreSaleDoc);
+    rows.sort((a, b) => {
+      const ta = parseSaleDateTimeForSort(a);
+      const tb = parseSaleDateTimeForSort(b);
+      return tb - ta;
+    });
+    return rows.slice(0, limitCount);
+  }
+}
+
+function parseSaleDateTimeForSort(sale) {
+  if (sale?.sale_date) {
+    const parts = String(sale.sale_date).split('.');
+    if (parts.length === 3) {
+      const [d, m, y] = parts.map((x) => parseInt(x, 10));
+      const t = (sale.sale_time || '00:00:00').split(':').map((x) => parseInt(x, 10));
+      return new Date(y, m - 1, d, t[0] || 0, t[1] || 0, t[2] || 0).getTime();
+    }
+  }
+  if (sale?.created_at?.toDate) return sale.created_at.toDate().getTime();
+  if (sale?.created_at?.seconds) return sale.created_at.seconds * 1000;
+  return 0;
+}
+
 export function subscribeTables(branchKey, onUpdate) {
   if (!isFirebaseReady()) {
     console.warn('subscribeTables: Firebase henüz hazır değil');

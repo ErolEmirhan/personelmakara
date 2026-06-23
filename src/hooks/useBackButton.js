@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { startTransition, useEffect, useId, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { MAIN_TABS } from '../constants/nav';
 
@@ -18,6 +18,19 @@ export function useBackHandler(active, onBack) {
   }, [active, id, registerBackHandler]);
 }
 
+function scheduleHistoryTrap() {
+  queueMicrotask(() => {
+    requestAnimationFrame(() => {
+      try {
+        const url = `${window.location.pathname}${window.location.search}`;
+        history.pushState({ makaraNav: true }, '', url);
+      } catch {
+        /* ignore */
+      }
+    });
+  });
+}
+
 /** Android geri tuşunu uygulama içi gezinmeye yönlendirir */
 export function useAndroidBackNavigation({ accountOpen, setAccountOpen } = {}) {
   const {
@@ -30,47 +43,7 @@ export function useAndroidBackNavigation({ accountOpen, setAccountOpen } = {}) {
     runBackHandlers,
   } = useApp();
 
-  useEffect(() => {
-    const trapHistory = () => {
-      try {
-        history.pushState({ makaraNav: true }, '');
-      } catch {
-        /* ignore */
-      }
-    };
-
-    const onPopState = () => {
-      if (runBackHandlers()) {
-        trapHistory();
-        return;
-      }
-      if (accountOpen && setAccountOpen) {
-        setAccountOpen(false);
-        trapHistory();
-        return;
-      }
-      if (drawerOpen) {
-        setDrawerOpen(false);
-        trapHistory();
-        return;
-      }
-      if (screen === 'order') {
-        goBackToTables();
-        trapHistory();
-        return;
-      }
-      if (mainTab !== MAIN_TABS.TABLES) {
-        setMainTab(MAIN_TABS.TABLES);
-        trapHistory();
-        return;
-      }
-      trapHistory();
-    };
-
-    trapHistory();
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [
+  const navRef = useRef({
     accountOpen,
     setAccountOpen,
     drawerOpen,
@@ -80,5 +53,65 @@ export function useAndroidBackNavigation({ accountOpen, setAccountOpen } = {}) {
     setMainTab,
     goBackToTables,
     runBackHandlers,
-  ]);
+  });
+
+  navRef.current = {
+    accountOpen,
+    setAccountOpen,
+    drawerOpen,
+    setDrawerOpen,
+    screen,
+    mainTab,
+    setMainTab,
+    goBackToTables,
+    runBackHandlers,
+  };
+
+  useEffect(() => {
+    const onPopState = () => {
+      const nav = navRef.current;
+
+      if (nav.runBackHandlers()) {
+        scheduleHistoryTrap();
+        return;
+      }
+
+      if (nav.accountOpen && nav.setAccountOpen) {
+        startTransition(() => nav.setAccountOpen(false));
+        scheduleHistoryTrap();
+        return;
+      }
+
+      if (nav.drawerOpen) {
+        startTransition(() => nav.setDrawerOpen(false));
+        scheduleHistoryTrap();
+        return;
+      }
+
+      if (nav.screen === 'order') {
+        startTransition(() => nav.goBackToTables());
+        scheduleHistoryTrap();
+        return;
+      }
+
+      if (nav.mainTab !== MAIN_TABS.TABLES) {
+        startTransition(() => nav.setMainTab(MAIN_TABS.TABLES));
+        scheduleHistoryTrap();
+        return;
+      }
+
+      scheduleHistoryTrap();
+    };
+
+    try {
+      const url = `${window.location.pathname}${window.location.search}`;
+      history.replaceState({ makaraNav: true }, '', url);
+      history.pushState({ makaraNav: true }, '', url);
+    } catch {
+      /* ignore */
+    }
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 }

@@ -32,3 +32,9 @@ export function canSendStaffAnnouncements(staff) {
   if (!staff) return false;
   return !!(staff.is_manager || staff.is_admin || staff.is_boss);
 }
+
+/** Kahvaltı satış kaydı (müdür, şef, admin, patron) */
+export function canViewBreakfastSalesRecord(staff) {
+  if (!staff) return false;
+  return !!(staff.is_manager || staff.is_chef || staff.is_admin || staff.is_boss);
+}

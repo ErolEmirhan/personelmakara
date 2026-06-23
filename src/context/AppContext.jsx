@@ -300,12 +300,17 @@ export function AppProvider({ children }) {
   }, [loadExistingOrders]);
 
   const addToCart = useCallback((product, options = {}) => {
-    const { isGift = false, extraNote = '', quantity = 1 } = options;
+    const { isGift = false, extraNote = '', quantity = 1, displayName } = options;
+    const itemName = displayName || product.name;
     hapticLight();
     setCartBump((n) => n + 1);
     setCart((prev) => {
       const existing = prev.find(
-        (i) => i.id === product.id && i.isGift === isGift && (i.extraNote || '') === (extraNote || '')
+        (i) =>
+          i.id === product.id &&
+          i.name === itemName &&
+          i.isGift === isGift &&
+          (i.extraNote || '') === (extraNote || '')
       );
       if (existing) {
         return prev.map((i) =>
@@ -316,7 +321,7 @@ export function AppProvider({ children }) {
         ...prev,
         {
           id: product.id,
-          name: product.name,
+          name: itemName,
           price: product.price,
           category_id: product.category_id,
           imageSrc: product.imageSrc || null,

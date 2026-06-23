@@ -1,11 +1,12 @@
+import { createPortal } from 'react-dom';
 import { useOverlayTransition } from '../../hooks/useOverlayTransition';
 
 export function Modal({ open, onClose, children, title, className = '' }) {
   const { present, shown, panelRef, duration, ease } = useOverlayTransition(open);
 
-  if (!present) return null;
+  if (!present || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[9000] flex items-end sm:items-center justify-center p-4"
       role="dialog"
@@ -42,6 +43,7 @@ export function Modal({ open, onClose, children, title, className = '' }) {
         )}
         <div className="px-6 pb-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
