@@ -15,7 +15,7 @@
       ]
     },
     {
-      "source": "/index.html",
+      "source": "/(index\\.html|registerSW\\.js|manifest\\.webmanifest)",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
@@ -23,7 +23,10 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets/|icons/|logo\\.png|makara\\.png|sw\\.js|registerSW\\.js|manifest\\.webmanifest|workbox-).*)",
+      "destination": "/index.html"
+    }
   ],
   "redirects": [
     { "source": "/mobile", "destination": "/", "permanent": false },

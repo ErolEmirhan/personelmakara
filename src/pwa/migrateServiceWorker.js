@@ -53,6 +53,12 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
     return;
   }
 
+  try {
+    localStorage.removeItem('staffSession');
+  } catch {
+    /* ignore */
+  }
+
   await Promise.all(registrations.map((reg) => reg.unregister()));
 
   if ('caches' in window) {

@@ -26,6 +26,15 @@ export function SplashScreen() {
   const accent = theme.accentSolid;
   const accentLight = theme.accentLight || '#fdf2f8';
   const fullName = staff ? `${staff.name || ''} ${staff.surname || ''}`.trim() : '';
+  const roleLabel = staff?.is_manager
+    ? 'Müdür'
+    : staff?.is_chef
+      ? 'Şef'
+      : staff?.is_admin
+        ? 'Admin'
+        : staff?.is_boss
+          ? 'Patron'
+          : 'Personel';
   const progressPct = Math.min(100, Math.round(displayProgress));
 
   const loadingLabel = useMemo(() => {
@@ -201,6 +210,11 @@ export function SplashScreen() {
           <h1 className="mt-5 font-display text-[22px] font-semibold tracking-[-0.03em] text-slate-900">
             {fullName ? `Hoş geldin, ${fullName.split(' ')[0]}` : 'Hoş geldin'}
           </h1>
+          {fullName && (
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              {fullName} · {roleLabel}
+            </p>
+          )}
           <p className="mt-1.5 text-sm text-slate-500 font-medium">
             Salon hazırlanıyor…
           </p>

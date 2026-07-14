@@ -143,9 +143,9 @@ function parseStaffFlag(value) {
   return false;
 }
 
-function mapStaffRecord(data, fallbackId) {
-  const idRaw = data?.id ?? fallbackId;
-  const id = typeof idRaw === 'string' ? parseInt(idRaw, 10) : idRaw;
+function mapStaffRecord(data, docId) {
+  const idNum = Number(docId);
+  const id = Number.isFinite(idNum) ? idNum : docId;
   return {
     id,
     name: data?.name || '',
@@ -170,6 +170,12 @@ export async function loginStaff(password) {
   const q = query(collection(db, 'staff'), where('password', '==', password.toString()));
   const snap = await getDocs(q);
   if (snap.empty) return { success: false, error: 'Şifre hatalı' };
+  if (snap.docs.length > 1) {
+    return {
+      success: false,
+      error: 'Bu şifre birden fazla personele kayıtlı. Yöneticinizden benzersiz şifre isteyin.',
+    };
+  }
   const docSnap = snap.docs[0];
   const data = docSnap.data();
   return {

@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { loginStaff, changeStaffPassword, stopStaffPresence, fetchStaffRecord } from '../services/firebaseService';
 import { SESSION_DURATION } from '../config/branch';
 
 const SESSION_KEY = 'staffSession';
+const SESSION_VERSION = 2;
 const AuthContext = createContext(null);
 
 function loadSession() {
@@ -10,6 +11,14 @@ function loadSession() {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
+    if (session.version !== SESSION_VERSION) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    if (!session.staff?.id) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
     if (!session.rememberMe && session.timestamp) {
       if (Date.now() - session.timestamp > SESSION_DURATION) {
         localStorage.removeItem(SESSION_KEY);
@@ -18,6 +27,7 @@ function loadSession() {
     }
     return session.staff;
   } catch {
+    localStorage.removeItem(SESSION_KEY);
     return null;
   }
 }
@@ -27,12 +37,18 @@ export function AuthProvider({ children }) {
   const [phase, setPhase] = useState(() => (loadSession() ? 'splash' : 'login'));
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const validatingRef = useRef(false);
 
   const saveSession = useCallback((staffData, rememberMe) => {
     try {
       localStorage.setItem(
         SESSION_KEY,
-        JSON.stringify({ staff: staffData, timestamp: Date.now(), rememberMe })
+        JSON.stringify({
+          version: SESSION_VERSION,
+          staff: staffData,
+          timestamp: Date.now(),
+          rememberMe,
+        })
       );
     } catch {
       /* iOS gizli sekme vb. */
@@ -99,19 +115,28 @@ export function AuthProvider({ children }) {
     if (!staff?.id) return null;
     try {
       const fresh = await fetchStaffRecord(staff.id);
-      if (fresh) {
-        updateStaff(fresh);
-        return fresh;
+      if (!fresh) {
+        logout('Oturumunuz sonlandırıldı. Lütfen tekrar giriş yapın.');
+        return null;
       }
+      if (fresh.id !== staff.id) {
+        logout('Oturum doğrulanamadı. Lütfen tekrar giriş yapın.');
+        return null;
+      }
+      updateStaff(fresh);
+      return fresh;
     } catch {
       /* ignore */
     }
     return null;
-  }, [staff?.id, updateStaff]);
+  }, [staff?.id, updateStaff, logout]);
 
   useEffect(() => {
-    if (!staff?.id) return undefined;
-    refreshStaffProfile();
+    if (!staff?.id || validatingRef.current) return undefined;
+    validatingRef.current = true;
+    refreshStaffProfile().finally(() => {
+      validatingRef.current = false;
+    });
     const onVisible = () => {
       if (document.visibilityState === 'visible') refreshStaffProfile();
     };
