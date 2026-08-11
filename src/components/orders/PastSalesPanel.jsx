@@ -18,7 +18,6 @@ import {
 import {
   buildSaleDisplayRows,
   getTodayDayKey,
-  summarizeDaySales,
 } from '../../utils/dailySalesHistory';
 import { staffRolePriority } from '../../utils/staffRole';
 
@@ -245,7 +244,6 @@ export function PastSalesPanel() {
 
   const dayKey = getTodayDayKey();
   const rows = useMemo(() => buildSaleDisplayRows(sales, dayKey), [sales, dayKey]);
-  const summary = useMemo(() => summarizeDaySales(rows.map((row) => row.sale)), [rows]);
 
   const toggleExpanded = (id) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -283,9 +281,6 @@ export function PastSalesPanel() {
         <h2 className="font-display font-bold text-xl text-slate-900 mt-1 tracking-tight">
           Geçmiş satışlar
         </h2>
-        <p className="text-sm text-slate-500 mt-1">
-          {summary.saleCount} satış · {formatMoney(summary.totalRevenue)} ₺
-        </p>
       </div>
 
       {rows.length === 0 ? (
