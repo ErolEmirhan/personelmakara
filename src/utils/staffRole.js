@@ -38,3 +38,9 @@ export function canViewBreakfastSalesRecord(staff) {
   if (!staff) return false;
   return !!(staff.is_manager || staff.is_chef || staff.is_admin || staff.is_boss);
 }
+
+/** Siparişler ekranında günlük geçmiş satışlar (müdür) */
+export function canViewDailySalesHistory(staff) {
+  if (!staff) return false;
+  return !!staff.is_manager;
+}

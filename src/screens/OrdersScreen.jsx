@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBranch } from '../context/BranchContext';
+import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 import { fetchBranchStaff } from '../services/firebaseService';
 import { groupOrderItemsByStaff } from '../components/order/ExistingOrdersPanel';
 import { StaffAvatar } from '../components/ui/StaffAvatar';
+import { OrdersViewSwitch, ORDERS_VIEWS } from '../components/orders/OrdersViewSwitch';
+import { PastSalesPanel } from '../components/orders/PastSalesPanel';
 import {
   adminSectionCardClass,
   adminSectionHeaderClass,
@@ -13,6 +16,7 @@ import {
   bossSectionHeaderClass,
 } from '../constants/bossTheme';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
+import { canViewDailySalesHistory } from '../utils/staffRole';
 
 function collectOrderEntries(tables) {
   const entries = [];
@@ -39,45 +43,9 @@ function collectOrderEntries(tables) {
   return entries;
 }
 
-export function OrdersScreen() {
-  const { theme, branchKey } = useBranch();
-  const { tables, loading, selectTable } = useApp();
-  const [staffList, setStaffList] = useState([]);
-
-  useEffect(() => {
-    if (!branchKey) return;
-    fetchBranchStaff(branchKey)
-      .then(setStaffList)
-      .catch(() => setStaffList([]));
-  }, [branchKey]);
-
-  const entries = useMemo(() => collectOrderEntries(tables), [tables]);
-
-  const staffGroups = useMemo(() => {
-    const groups = groupOrderItemsByStaff(entries, staffList);
-    return groups
-      .map((group) => ({
-        ...group,
-        firstSequence: Math.min(...group.items.map((item) => item.sequence ?? 0)),
-      }))
-      .sort((a, b) => a.firstSequence - b.firstSequence);
-  }, [entries, staffList]);
-
-  const occupiedCount = useMemo(
-    () => tables.filter((t) => t.hasOrder).length,
-    [tables]
-  );
-
-  if (loading && !tables.length) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-[3px] border-pink-100 border-t-pink-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
-
+function ActiveOrdersPanel({ theme, tables, entries, staffGroups, occupiedCount, selectTable }) {
   return (
-    <div className="px-4" style={{ paddingBottom: BOTTOM_NAV_PADDING }}>
+    <>
       <div className="mb-5 px-1">
         <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
           Canlı salon
@@ -195,6 +163,75 @@ export function OrdersScreen() {
             );
           })}
         </div>
+      )}
+    </>
+  );
+}
+
+export function OrdersScreen() {
+  const { theme, branchKey } = useBranch();
+  const { staff } = useAuth();
+  const { tables, loading, selectTable } = useApp();
+  const [staffList, setStaffList] = useState([]);
+  const [view, setView] = useState(ORDERS_VIEWS.ACTIVE);
+
+  const showHistory = canViewDailySalesHistory(staff);
+
+  useEffect(() => {
+    if (!branchKey) return;
+    fetchBranchStaff(branchKey)
+      .then(setStaffList)
+      .catch(() => setStaffList([]));
+  }, [branchKey]);
+
+  const entries = useMemo(() => collectOrderEntries(tables), [tables]);
+
+  const staffGroups = useMemo(() => {
+    const groups = groupOrderItemsByStaff(entries, staffList);
+    return groups
+      .map((group) => ({
+        ...group,
+        firstSequence: Math.min(...group.items.map((item) => item.sequence ?? 0)),
+      }))
+      .sort((a, b) => a.firstSequence - b.firstSequence);
+  }, [entries, staffList]);
+
+  const occupiedCount = useMemo(
+    () => tables.filter((t) => t.hasOrder).length,
+    [tables]
+  );
+
+  if (loading && !tables.length && view === ORDERS_VIEWS.ACTIVE) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-10 h-10 border-[3px] border-pink-100 border-t-pink-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4" style={{ paddingBottom: BOTTOM_NAV_PADDING }}>
+      {showHistory && (
+        <div className="mb-5">
+          <OrdersViewSwitch
+            view={view}
+            onChange={setView}
+            accent={theme.accentSolid}
+          />
+        </div>
+      )}
+
+      {view === ORDERS_VIEWS.HISTORY && showHistory ? (
+        <PastSalesPanel />
+      ) : (
+        <ActiveOrdersPanel
+          theme={theme}
+          tables={tables}
+          entries={entries}
+          staffGroups={staffGroups}
+          occupiedCount={occupiedCount}
+          selectTable={selectTable}
+        />
       )}
     </div>
   );
