@@ -28,6 +28,8 @@ import {
   registerStaffPushNotifications,
 } from '../services/pushNotifications';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
+import { checkForAppUpdate, forcePwaRefresh } from '../pwa/registerUpdates';
+import { readLocalBuildVersion } from '../pwa/buildVersion';
 
 function SettingsCard({ title, children, className = '' }) {
   return (
@@ -112,6 +114,9 @@ export function SettingsScreen() {
   const [pushRegistered, setPushRegistered] = useState(false);
   const [pushStatusNote, setPushStatusNote] = useState('');
   const [showLogout, setShowLogout] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateNote, setUpdateNote] = useState('');
+  const localBuild = readLocalBuildVersion() || __APP_VERSION__;
   const pushAvailable = isPushConfiguredForBranch(branchKey);
 
   useEffect(() => {
@@ -160,6 +165,24 @@ export function SettingsScreen() {
     return name.trim() !== (staff.name || '').trim()
       || surname.trim() !== (staff.surname || '').trim();
   }, [staff, name, surname]);
+
+  const handleCheckUpdate = async () => {
+    setUpdateChecking(true);
+    setUpdateNote('');
+    try {
+      const { updateAvailable, remote } = await checkForAppUpdate();
+      if (updateAvailable) {
+        setUpdateNote('Yeni sürüm bulundu. Güncelleniyor…');
+        forcePwaRefresh();
+        return;
+      }
+      setUpdateNote(remote ? 'Uygulama güncel.' : 'Bağlantı kurulamadı, tekrar deneyin.');
+    } catch {
+      setUpdateNote('Güncelleme kontrol edilemedi.');
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!staff || !profileDirty) return;
@@ -488,6 +511,39 @@ export function SettingsScreen() {
                   </p>
                 )}
               </div>
+            )}
+          </SettingsCard>
+
+          <SettingsCard title="Uygulama">
+            <p className="text-sm font-semibold text-slate-900">Ana ekran sürümü</p>
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+              Deploy sonrası eski sürüm görünüyorsa buradan güncelleyin. Oturumunuz korunur.
+            </p>
+            <p className="mt-2 text-[11px] font-mono text-slate-400 break-all">
+              {localBuild}
+            </p>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleCheckUpdate}
+                disabled={updateChecking}
+                className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 disabled:opacity-50 active:bg-slate-50 transition-colors"
+              >
+                {updateChecking ? 'Kontrol ediliyor…' : 'Güncellemeyi kontrol et'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUpdateNote('Önbellek temizleniyor…');
+                  forcePwaRefresh();
+                }}
+                className="text-xs font-bold px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 active:bg-violet-100 transition-colors"
+              >
+                Zorla yenile
+              </button>
+            </div>
+            {updateNote && (
+              <p className="mt-2 text-xs text-slate-600 leading-relaxed">{updateNote}</p>
             )}
           </SettingsCard>
 

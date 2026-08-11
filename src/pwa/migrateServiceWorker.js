@@ -1,4 +1,5 @@
 import { signalAppUpdating } from './updateSplash';
+import { fetchRemoteBuildVersion, readLocalBuildVersion, isRemoteBuildNewer } from './buildVersion';
 
 const APP_VERSION_KEY = 'makara-app-version';
 const MIGRATION_RELOAD_KEY = 'makara-cache-migrated';
@@ -39,6 +40,9 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
   const forceReset = new URLSearchParams(window.location.search).get('reset-sw') === '1';
   const previousVersion = readStoredVersion();
   const versionChanged = previousVersion && previousVersion !== appVersion;
+  const localDom = readBuildVersionFromDom();
+  const remoteBuild = await fetchRemoteBuildVersion();
+  const remoteBuildNewer = isRemoteBuildNewer(localDom, remoteBuild);
 
   const registrations = await navigator.serviceWorker.getRegistrations();
   const isRootDeploy = !window.location.pathname.startsWith('/mobile');
@@ -47,7 +51,7 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
     return isRootDeploy && scopePath.includes('/mobile');
   });
 
-  const shouldReset = forceReset || versionChanged || hasLegacyScope;
+  const shouldReset = forceReset || versionChanged || hasLegacyScope || remoteBuildNewer;
   if (!shouldReset) {
     writeStoredVersion(appVersion);
     return;

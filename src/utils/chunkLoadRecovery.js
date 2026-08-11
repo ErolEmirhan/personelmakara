@@ -31,7 +31,8 @@ export function isRecoverableDeployError(error) {
   return false;
 }
 
-export function redirectToCacheReset() {
+export function redirectToCacheReset(options = {}) {
+  const { immediate = false } = options;
   if (recoveryScheduled) return;
   recoveryScheduled = true;
   signalAppUpdating();
@@ -39,9 +40,10 @@ export function redirectToCacheReset() {
   if (!url.searchParams.has('reset-sw')) {
     url.searchParams.set('reset-sw', '1');
   }
+  const delay = immediate ? 400 : RESET_DELAY_MS;
   window.setTimeout(() => {
     window.location.replace(url.toString());
-  }, RESET_DELAY_MS);
+  }, delay);
 }
 
 function extractErrorMessage(event) {
