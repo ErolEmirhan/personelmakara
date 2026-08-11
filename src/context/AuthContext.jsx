@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { loginStaff, changeStaffPassword, stopStaffPresence, fetchStaffRecord } from '../services/firebaseService';
 import { SESSION_DURATION } from '../config/branch';
+import { isPwaStandalone } from '../utils/pwaStandalone';
 
 const SESSION_KEY = 'staffSession';
 const SESSION_VERSION = 2;
@@ -19,7 +20,8 @@ function loadSession() {
       localStorage.removeItem(SESSION_KEY);
       return null;
     }
-    if (!session.rememberMe && session.timestamp) {
+    const persistSession = session.rememberMe || isPwaStandalone();
+    if (!persistSession && session.timestamp) {
       if (Date.now() - session.timestamp > SESSION_DURATION) {
         localStorage.removeItem(SESSION_KEY);
         return null;
@@ -47,7 +49,7 @@ export function AuthProvider({ children }) {
           version: SESSION_VERSION,
           staff: staffData,
           timestamp: Date.now(),
-          rememberMe,
+          rememberMe: rememberMe || isPwaStandalone(),
         })
       );
     } catch {

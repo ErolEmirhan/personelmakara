@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { ChangePasswordModal } from '../modals/ChangePasswordModal';
+import { isPwaStandalone } from '../../utils/pwaStandalone';
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}makara.png`;
 
@@ -32,7 +33,7 @@ export function LoginScreen() {
   const { login, loginError, loggingIn } = useAuth();
   const { theme } = useBranch();
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(isPwaStandalone);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [focused, setFocused] = useState(false);
