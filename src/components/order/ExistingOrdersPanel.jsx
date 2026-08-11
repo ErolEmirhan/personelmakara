@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBranch } from '../../context/BranchContext';
 import { fetchBranchStaff } from '../../services/firebaseService';
-import {
-  adminSectionCardClass,
-  adminSectionHeaderClass,
-} from '../../constants/adminTheme';
-import {
-  bossSectionCardClass,
-  bossSectionHeaderClass,
-} from '../../constants/bossTheme';
 import { StaffAvatar } from '../ui/StaffAvatar';
 import { staffRolePriority } from '../../utils/staffRole';
 import { useBackHandler } from '../../hooks/useBackButton';
@@ -38,6 +30,60 @@ function resolveStaffForItem(item, lookup) {
     surname: parts.slice(1).join(' ') || '',
     profileImageSrc: null,
   };
+}
+
+function formatMoney(value) {
+  const amount = Number(value) || 0;
+  return `${amount.toFixed(2).replace('.', ',')}\u00a0₺`;
+}
+
+function MetaDot() {
+  return <span className="text-slate-300 select-none" aria-hidden>·</span>;
+}
+
+function ChevronIcon({ open }) {
+  return (
+    <svg
+      className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2.25}
+      aria-hidden
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+    </svg>
+  );
+}
+
+function getRoleAccentClass(group) {
+  if (group.is_admin) return 'border-l-amber-400';
+  if (group.is_boss && !group.is_admin) return 'border-l-rose-400';
+  if (group.is_manager) return 'border-l-orange-400';
+  if (group.is_chef) return 'border-l-yellow-400';
+  return 'border-l-slate-200';
+}
+
+function SelectBox({ selected, onToggle, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={label}
+      aria-pressed={selected}
+      className={`shrink-0 w-[22px] h-[22px] rounded-md border flex items-center justify-center transition-colors ${
+        selected
+          ? 'bg-red-500 border-red-500 text-white'
+          : 'border-slate-300 bg-white'
+      }`}
+    >
+      {selected && (
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+    </button>
+  );
 }
 
 export function groupOrderItemsByStaff(items, staffList) {
@@ -72,9 +118,17 @@ export function groupOrderItemsByStaff(items, staffList) {
   return Array.from(groups.values());
 }
 
-export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
+export function ExistingOrdersPanel({
+  items,
+  canCancel,
+  onCancelItem,
+  canBulkCancel,
+  onBulkCancel,
+}) {
   const { theme, branchKey } = useBranch();
   const [expanded, setExpanded] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [staffList, setStaffList] = useState([]);
 
   useEffect(() => {
@@ -83,6 +137,21 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
       .then(setStaffList)
       .catch(() => setStaffList([]));
   }, [branchKey, items.length]);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setBulkMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [items.length]);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const valid = new Set(items.map((item) => item.id));
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
 
   const groups = useMemo(() => {
     const list = groupOrderItemsByStaff(items, staffList);
@@ -93,7 +162,19 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
     });
   }, [items, staffList]);
 
-  useBackHandler(items.length > 0 && expanded, () => setExpanded(false));
+  const exitBulkMode = () => {
+    setBulkMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const startBulkMode = () => {
+    setExpanded(true);
+    setBulkMode(true);
+    setSelectedIds(new Set());
+  };
+
+  useBackHandler(items.length > 0 && bulkMode, exitBulkMode);
+  useBackHandler(items.length > 0 && expanded && !bulkMode, () => setExpanded(false));
 
   const totalAmount = useMemo(
     () =>
@@ -104,191 +185,239 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
     [items]
   );
 
+  const allSelected = items.length > 0 && selectedIds.size === items.length;
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedIds.has(item.id)),
+    [items, selectedIds]
+  );
+
+  const toggleItem = (itemId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(items.map((item) => item.id)));
+  };
+
   if (items.length === 0) return null;
 
+  const isOpen = expanded || bulkMode;
+
   return (
-    <div className="mb-5 rounded-2xl bg-emerald-50 border border-emerald-200 overflow-hidden shadow-sm">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-3 p-4 text-left active:bg-emerald-100/50 transition-colors"
-        aria-expanded={expanded}
-      >
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
-            Mevcut Siparişler
-          </p>
-          <div
-            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-              expanded ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
-            }`}
+    <section
+      className="mb-3 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden"
+      aria-label="Mevcut siparişler"
+    >
+      {/* ── Header ── */}
+      <div className="px-3.5 py-3 border-b border-slate-100/80">
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => !bulkMode && setExpanded((v) => !v)}
+            disabled={bulkMode}
+            className="flex-1 min-w-0 text-left disabled:cursor-default active:opacity-80 transition-opacity"
+            aria-expanded={isOpen}
           >
-            <div className="overflow-hidden min-h-0">
-              <p className="text-[11px] text-emerald-600/80 mt-0.5">
-                {items.length} ürün · {totalAmount.toFixed(2)} ₺
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+              Mevcut siparişler
+            </p>
+
+            {bulkMode ? (
+              <p className="mt-1 text-sm font-semibold text-red-600 whitespace-nowrap">
+                Toplu iptal modu
               </p>
-            </div>
-          </div>
-        </div>
+            ) : (
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-semibold text-slate-900">
+                <span className="whitespace-nowrap tabular-nums">{items.length} ürün</span>
+                <MetaDot />
+                <span className="whitespace-nowrap tabular-nums">{formatMoney(totalAmount)}</span>
+                {groups.length > 0 && (
+                  <>
+                    <MetaDot />
+                    <span className="whitespace-nowrap text-slate-500 font-medium">
+                      {groups.length} personel
+                    </span>
+                  </>
+                )}
+              </p>
+            )}
+          </button>
 
-        <div
-          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            expanded || groups.length === 0 ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
-          }`}
-        >
-          <div className="overflow-hidden min-h-0">
-            <div className="flex items-center shrink-0 pr-1">
-              {groups.slice(0, 5).map((group, i) => (
-                <div
-                  key={group.key}
-                  className="ring-2 ring-emerald-50 rounded-full"
-                  style={{ marginLeft: i === 0 ? 0 : -10, zIndex: 10 - i }}
-                >
-                  <StaffAvatar
-                    name={group.name}
-                    surname={group.surname}
-                    profileImageSrc={group.profileImageSrc}
-                    isManager={group.is_manager}
-                    isChef={group.is_chef}
-                    isAdmin={group.is_admin}
-                    isBoss={group.is_boss}
-                    size="2xs"
-                    accent={theme.accent}
-                  />
-                </div>
-              ))}
-              {groups.length > 5 && (
-                <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-white rounded-full w-7 h-7 flex items-center justify-center ring-2 ring-white shadow-sm">
-                  +{groups.length - 5}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <svg
-          className={`w-5 h-5 text-emerald-700 shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            expanded ? 'rotate-180' : ''
-          }`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2.5}
-          aria-hidden
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-        </svg>
-      </button>
-
-      <div
-        className={`grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-        }`}
-      >
-        <div className="overflow-hidden min-h-0">
-          <div
-            className={`px-4 pb-4 space-y-4 border-t border-emerald-200/70 transition-opacity duration-300 ease-out ${
-              expanded ? 'opacity-100 delay-75' : 'opacity-0'
-            }`}
-          >
-            {groups.map((group) => {
-            const groupTotal = group.items.reduce(
-              (sum, item) =>
-                sum + (item.isGift ? 0 : (Number(item.price) || 0) * (Number(item.quantity) || 0)),
-              0
-            );
-
-            const isBossGroup = group.is_boss && !group.is_admin;
-
-            return (
-              <section
-                key={group.key}
-                className={
-                  group.is_admin
-                    ? adminSectionCardClass
-                    : isBossGroup
-                      ? bossSectionCardClass
-                      : 'rounded-xl overflow-hidden bg-white/70 border border-emerald-100/80'
-                }
+          <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+            {canBulkCancel && !bulkMode && (
+              <button
+                type="button"
+                onClick={startBulkMode}
+                className="h-8 px-2.5 rounded-lg border border-red-500 bg-white text-red-600 text-[11px] font-bold whitespace-nowrap active:bg-red-50 transition-colors"
               >
-                <div className={`flex items-center gap-3 px-3 py-2.5 border-b ${
-                  group.is_admin
-                    ? adminSectionHeaderClass
-                    : isBossGroup
-                      ? bossSectionHeaderClass
-                      : 'bg-white/90 border-emerald-100/60'
-                }`}>
-                  <StaffAvatar
-                    name={group.name}
-                    surname={group.surname}
-                    profileImageSrc={group.profileImageSrc}
-                    isManager={group.is_manager}
-                    isChef={group.is_chef}
-                    isAdmin={group.is_admin}
-                    isBoss={group.is_boss}
-                    size="sm"
-                    accent={theme.accent}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate text-slate-900">
-                      {group.displayName}
-                    </p>
-                    <p className={`text-[11px] ${
-                      group.is_admin
-                        ? 'text-amber-800/55 font-medium'
-                        : isBossGroup
-                          ? 'text-red-800/55 font-medium'
-                          : 'text-gray-500'
-                    }`}>
-                      {group.items.length} ürün · {groupTotal.toFixed(2)} ₺
-                    </p>
-                  </div>
-                </div>
+                Toplu iptal
+              </button>
+            )}
 
-                <ul className="divide-y divide-emerald-50">
-                  {group.items.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex items-center justify-between gap-2 px-3 py-2.5 text-sm"
-                    >
-                      <span className="text-gray-800 font-medium min-w-0">
-                        <span className="text-emerald-700 font-bold">{item.quantity}×</span>{' '}
-                        {item.product_name}
-                        {item.isGift && (
-                          <span className="ml-1 text-emerald-600 text-xs font-semibold">İkram</span>
-                        )}
-                      </span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-gray-600 font-semibold text-xs">
-                          {item.isGift
-                            ? '0.00'
-                            : ((Number(item.price) || 0) * (Number(item.quantity) || 0)).toFixed(2)}{' '}
-                          ₺
-                        </span>
-                        {canCancel && onCancelItem && (
-                          <button
-                            type="button"
-                            onClick={() => onCancelItem(item)}
-                            className="text-red-500 text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 active:bg-red-100"
-                          >
-                            İptal
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            );
-          })}
+            {bulkMode && (
+              <button
+                type="button"
+                onClick={exitBulkMode}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 text-[11px] font-bold whitespace-nowrap active:bg-slate-100"
+              >
+                Vazgeç
+              </button>
+            )}
 
-          <div className="flex items-center justify-between px-1 pt-1 text-sm">
-            <span className="text-emerald-800 font-semibold">Toplam</span>
-            <span className="text-emerald-900 font-bold">{totalAmount.toFixed(2)} ₺</span>
-          </div>
+            {!bulkMode && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 active:bg-slate-50 transition-colors"
+                aria-label={isOpen ? 'Siparişleri gizle' : 'Siparişleri göster'}
+              >
+                <ChevronIcon open={isOpen} />
+              </button>
+            )}
           </div>
         </div>
       </div>
-    </div>
+
+      {/* ── Expanded body ── */}
+      {isOpen && (
+        <>
+          {bulkMode && (
+            <div className="px-3.5 py-2.5 flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60">
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-xs font-semibold text-slate-700 active:opacity-70"
+              >
+                {allSelected ? 'Seçimi kaldır' : 'Tümünü seç'}
+              </button>
+              <span className="text-xs font-semibold text-slate-500 tabular-nums whitespace-nowrap">
+                {selectedIds.size}/{items.length} seçili
+              </span>
+            </div>
+          )}
+
+          <div className="divide-y divide-slate-100 pb-1">
+            {groups.map((group) => {
+              const groupTotal = group.items.reduce(
+                (sum, item) =>
+                  sum + (item.isGift ? 0 : (Number(item.price) || 0) * (Number(item.quantity) || 0)),
+                0
+              );
+
+              return (
+                <div key={group.key} className={`border-l-[3px] ${getRoleAccentClass(group)}`}>
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-50/50">
+                    <StaffAvatar
+                      name={group.name}
+                      surname={group.surname}
+                      profileImageSrc={group.profileImageSrc}
+                      isManager={group.is_manager}
+                      isChef={group.is_chef}
+                      isAdmin={group.is_admin}
+                      isBoss={group.is_boss}
+                      size="xs"
+                      accent={theme.accent}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {group.displayName}
+                      </p>
+                      <p className="text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                        {group.items.length} ürün · {formatMoney(groupTotal)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <ul>
+                    {group.items.map((item) => {
+                      const selected = selectedIds.has(item.id);
+                      const lineTotal = item.isGift
+                        ? 0
+                        : (Number(item.price) || 0) * (Number(item.quantity) || 0);
+
+                      return (
+                        <li
+                          key={item.id}
+                          className={`flex items-center gap-2.5 px-3.5 py-2.5 ${
+                            bulkMode && selected ? 'bg-red-50/70' : 'bg-white'
+                          }`}
+                        >
+                          {bulkMode && (
+                            <SelectBox
+                              selected={selected}
+                              onToggle={() => toggleItem(item.id)}
+                              label={selected ? `${item.product_name} seçimini kaldır` : `${item.product_name} seç`}
+                            />
+                          )}
+
+                          <span className="shrink-0 min-w-[2rem] h-7 px-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center tabular-nums">
+                            {item.quantity}×
+                          </span>
+
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {item.product_name}
+                            </p>
+                            {item.isGift && (
+                              <p className="text-[10px] font-semibold text-emerald-600 mt-0.5">İkram</p>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 flex flex-col items-end gap-1">
+                            <span className="text-sm font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                              {formatMoney(lineTotal)}
+                            </span>
+                            {canCancel && onCancelItem && !bulkMode && (
+                              <button
+                                type="button"
+                                onClick={() => onCancelItem(item)}
+                                className="text-[10px] font-bold text-red-600 px-2.5 py-1 rounded-lg border border-red-500 bg-white active:bg-red-50 transition-colors"
+                              >
+                                İptal
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 px-3.5 py-3 border-t border-slate-100 bg-slate-50/40">
+            <span className="text-sm font-semibold text-slate-600">Toplam</span>
+            <span className="text-base font-bold text-slate-900 tabular-nums whitespace-nowrap">
+              {formatMoney(totalAmount)}
+            </span>
+          </div>
+
+          {bulkMode && (
+            <div className="px-3.5 pb-3.5 pt-0">
+              <button
+                type="button"
+                disabled={selectedIds.size === 0}
+                onClick={() => {
+                  if (selectedIds.size === 0) return;
+                  onBulkCancel?.(selectedItems);
+                  exitBulkMode();
+                }}
+                className="w-full h-11 rounded-xl border-2 border-red-500 bg-white text-red-600 text-sm font-bold disabled:opacity-40 active:bg-red-50 transition-colors"
+              >
+                {selectedIds.size === 0
+                  ? 'İptal edilecek ürün seçin'
+                  : `${selectedIds.size} ürünü iptal et`}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }

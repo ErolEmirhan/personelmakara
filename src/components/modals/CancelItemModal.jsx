@@ -1,53 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../ui/Modal';
-import { submitAndWaitMobileAction } from '../../services/firebaseService';
+import { cancelOrderItems } from '../../utils/cancelOrderItem';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-
-async function cancelOrderItems({
-  item,
-  tableId,
-  staff,
-  cancelQty,
-  reason,
-}) {
-  const base = {
-    type: 'cancel_item',
-    itemId: item.id,
-    cancelReason: reason,
-    tableId,
-    staffId: staff.id,
-    staffName: `${staff.name} ${staff.surname}`,
-    staffIsManager: !!staff.is_manager,
-    staffIsChef: !!staff.is_chef,
-    staffIsAdmin: !!staff.is_admin,
-    staffIsBoss: !!staff.is_boss,
-  };
-
-  const maxQty = item.quantity || 1;
-
-  if (cancelQty >= maxQty) {
-    return submitAndWaitMobileAction({
-      ...base,
-      cancelQuantity: maxQty,
-    });
-  }
-
-  let lastResult = null;
-  for (let i = 0; i < cancelQty; i += 1) {
-    lastResult = await submitAndWaitMobileAction({
-      ...base,
-      cancelQuantity: 1,
-    });
-    if (!lastResult.success) {
-      return {
-        ...lastResult,
-        partialCount: i,
-      };
-    }
-  }
-  return lastResult;
-}
 
 export function CancelItemModal({ open, item, tableId, onClose }) {
   const { staff } = useAuth();

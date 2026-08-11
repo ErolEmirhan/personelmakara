@@ -2,12 +2,13 @@ import { useLayoutEffect, useMemo, useState, useEffect } from 'react';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { canCancelOrderItem } from '../../config/branch';
+import { canCancelOrderItem, canBulkCancelOrderItems } from '../../config/branch';
 import { OrderCartButton } from '../layout/Cart';
 import { ProductCard } from './ProductCard';
 import { CategorySidebar } from './CategorySidebar';
 import { ExistingOrdersPanel } from './ExistingOrdersPanel';
 import { CancelItemModal } from '../modals/CancelItemModal';
+import { BulkCancelModal } from '../modals/BulkCancelModal';
 import { TurkishCoffeeChoiceModal } from '../modals/TurkishCoffeeChoiceModal';
 import { ProductGridSkeleton } from '../ui/Skeleton';
 import {
@@ -34,6 +35,7 @@ export function OrderScreen() {
     currentOrderItems, loading, selectedTable, showToast,
   } = useApp();
   const [cancelItem, setCancelItem] = useState(null);
+  const [bulkCancelItems, setBulkCancelItems] = useState(null);
   const [coffeeProduct, setCoffeeProduct] = useState(null);
   const [menuOrderVersion, setMenuOrderVersion] = useState(0);
   const [bestSellersEnabled, setBestSellersEnabled] = useState(() =>
@@ -137,6 +139,7 @@ export function OrderScreen() {
   const productsLoading = loading || (bestSellersEnabled && isBestSellersCategory(selectedCategory) && bestSellersLoading);
 
   const canCancel = canCancelOrderItem(staff, branchKey);
+  const canBulkCancel = canBulkCancelOrderItems(staff);
   const accent = theme.accentSolid;
   const tableLabel = selectedTable?.name || `Masa ${selectedTable?.number ?? ''}`;
 
@@ -193,15 +196,18 @@ export function OrderScreen() {
           </div>
         </header>
 
-        <div className="shrink-0 px-3 pt-2">
-          <ExistingOrdersPanel
-            items={currentOrderItems}
-            canCancel={canCancel}
-            onCancelItem={canCancel ? (item) => setCancelItem(item) : undefined}
-          />
-        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+          <div className="px-3 pt-2">
+            <ExistingOrdersPanel
+              items={currentOrderItems}
+              canCancel={canCancel}
+              onCancelItem={canCancel ? (item) => setCancelItem(item) : undefined}
+              canBulkCancel={canBulkCancel}
+              onBulkCancel={(selected) => setBulkCancelItems(selected)}
+            />
+          </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pt-2 pb-4 scrollbar-hide">
+          <div className="px-2.5 pt-2 pb-4">
           {productsLoading ? (
             <ProductGridSkeleton count={4} columns={2} />
           ) : filteredProducts.length === 0 ? (
@@ -230,6 +236,7 @@ export function OrderScreen() {
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -238,6 +245,14 @@ export function OrderScreen() {
         item={cancelItem}
         tableId={selectedTable?.id}
         onClose={() => setCancelItem(null)}
+      />
+
+      <BulkCancelModal
+        open={!!bulkCancelItems?.length}
+        items={bulkCancelItems || []}
+        tableId={selectedTable?.id}
+        onClose={() => setBulkCancelItems(null)}
+        onComplete={() => setBulkCancelItems(null)}
       />
 
       <TurkishCoffeeChoiceModal
