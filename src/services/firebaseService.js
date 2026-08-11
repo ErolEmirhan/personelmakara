@@ -27,8 +27,8 @@ import { getBranchTheme, YAN_URUNLER_CATEGORY_ID } from '../config/branch';
 import { canSendStaffAnnouncements } from '../utils/staffRole';
 import { normalizeProductImage } from './productImageCache';
 import {
-  buildDefaultProductCalories,
-  buildDefaultProductContent,
+  buildProductDetailProfile,
+  isLegacyGenericContent,
 } from '../utils/productDetailDefaults';
 
 let mainApp = null;
@@ -545,30 +545,83 @@ export async function updateProductRecord(productId, fields = {}) {
   return { success: true };
 }
 
-/** Eksik içerik/kalori alanlarını tutarlı şablona göre doldurur */
-export async function seedMissingProductDetails(products, categories) {
-  const categoryMap = new Map((categories || []).map((c) => [c.id, c.name]));
+/** Tüm ürünlere ürün adına göre profesyonel içerik/kalori yazar */
+export async function seedAllProductDetailsFromFirestore(options = {}) {
+  const { force = false } = options;
+  const db = requireMainDb();
+
+  const [productSnap, categorySnap] = await Promise.all([
+    getDocs(collection(db, 'products')),
+    getDocs(collection(db, 'categories')),
+  ]);
+
+  const categoryMap = new Map();
+  categorySnap.docs.forEach((d) => {
+    const data = d.data();
+    const rawId = data.id != null ? data.id : d.id;
+    const id = typeof rawId === 'string' ? parseInt(rawId, 10) : rawId;
+    const label = data.name || '';
+    if (Number.isFinite(id)) categoryMap.set(id, label);
+    categoryMap.set(String(id), label);
+    categoryMap.set(d.id, label);
+  });
+
+  const timestamp = new Date().toISOString();
+  const batches = [];
+  let batch = writeBatch(db);
+  let batchCount = 0;
   let updated = 0;
+  let skipped = 0;
 
-  for (const product of products || []) {
-    const hasContent = !!(product.content || '').trim();
-    const hasCalories = !!(product.calories || '').trim();
-    if (hasContent && hasCalories) continue;
+  for (const docSnap of productSnap.docs) {
+    const data = docSnap.data();
+    const name = (data.name || '').trim() || 'Ürün';
+    const rawCategoryId = data.category_id;
+    const categoryId =
+      typeof rawCategoryId === 'string' ? parseInt(rawCategoryId, 10) : rawCategoryId;
+    const categoryName =
+      categoryMap.get(categoryId) ||
+      categoryMap.get(String(categoryId)) ||
+      categoryMap.get(docSnap.id) ||
+      'Menü';
 
-    const categoryName = categoryMap.get(product.category_id) || 'Menü';
-    const patch = {};
-    if (!hasContent) {
-      patch.content = buildDefaultProductContent(product.name, categoryName);
+    const existingContent = (data.content || data.description || '').trim();
+    const existingCalories = (data.calories || '').trim();
+    const isLegacy = isLegacyGenericContent(existingContent);
+
+    if (!force && existingContent && existingCalories && !isLegacy) {
+      skipped += 1;
+      continue;
     }
-    if (!hasCalories) {
-      patch.calories = buildDefaultProductCalories(product.name, categoryName);
-    }
 
-    await updateProductRecord(product.id, patch);
+    const profile = buildProductDetailProfile(name, categoryName);
+    batch.update(docSnap.ref, {
+      content: profile.content,
+      description: profile.content,
+      calories: profile.calories,
+      updatedAt: timestamp,
+    });
+    batchCount += 1;
     updated += 1;
+
+    if (batchCount >= 450) {
+      batches.push(batch);
+      batch = writeBatch(db);
+      batchCount = 0;
+    }
   }
 
-  return { updated };
+  if (batchCount > 0) batches.push(batch);
+  for (const b of batches) {
+    await b.commit();
+  }
+
+  return { updated, skipped, total: productSnap.docs.length };
+}
+
+/** @deprecated — seedAllProductDetailsFromFirestore kullanın */
+export async function seedMissingProductDetails(products, categories) {
+  return seedAllProductDetailsFromFirestore({ force: false });
 }
 
 /** Kasa/masaüstünden eklenen ürünler dahil katalog canlı senkronu */

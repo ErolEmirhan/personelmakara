@@ -6,11 +6,11 @@ import { ProfileImageCropModal } from '../modals/ProfileImageCropModal';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../hooks/useBackButton';
-import { seedMissingProductDetails, updateProductRecord } from '../../services/firebaseService';
+import { seedAllProductDetailsFromFirestore, updateProductRecord } from '../../services/firebaseService';
 import { clearProductImageCache, normalizeProductImage } from '../../services/productImageCache';
 import { prepareSupportImageDataUrl, validateSupportImageDataUrl } from '../../services/staffProfileImage';
 import { isBestSellersCategory } from '../../utils/bestSellers';
-import { productNeedsDetailSeed } from '../../utils/productDetailDefaults';
+import { productNeedsDetailRefresh } from '../../utils/productDetailDefaults';
 import { hapticLight } from '../../utils/haptic';
 
 const SHEET_Z = 'z-[9200]';
@@ -269,35 +269,52 @@ export function ProductManagementPanel({ open, onClose }) {
     await loadData({ force: true });
   }, [branchKey, loadData]);
 
+  const runProductDetailSeed = useCallback(async (options = {}) => {
+    const { force = false } = options;
+    setSeeding(true);
+    try {
+      const { updated, skipped } = await seedAllProductDetailsFromFirestore({ force });
+      if (updated > 0) {
+        await refreshCatalog();
+        showToast(
+          'success',
+          'Menü',
+          force
+            ? `${updated} ürünün içerik ve kalori bilgisi güncellendi`
+            : `${updated} ürüne profesyonel içerik ve kalori eklendi`
+        );
+      } else if (force) {
+        showToast('success', 'Menü', skipped > 0 ? 'Tüm ürünler zaten güncel' : 'Güncellenecek ürün bulunamadı');
+      }
+      return { updated };
+    } catch (err) {
+      showToast('error', 'Hata', err?.message || 'Menü detayları güncellenemedi');
+      throw err;
+    } finally {
+      setSeeding(false);
+    }
+  }, [refreshCatalog, showToast]);
+
   useEffect(() => {
     if (!open || seedStartedRef.current || !(products || []).length) return undefined;
-    if (!(products || []).some(productNeedsDetailSeed)) return undefined;
+    if (!(products || []).some(productNeedsDetailRefresh)) return undefined;
 
     seedStartedRef.current = true;
     let cancelled = false;
 
     (async () => {
-      setSeeding(true);
       try {
-        const { updated } = await seedMissingProductDetails(products, catalogCategories);
-        if (cancelled) return;
-        if (updated > 0) {
-          await refreshCatalog();
-          showToast('success', 'Menü', `${updated} ürüne içerik ve kalori eklendi`);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          showToast('error', 'Hata', err?.message || 'Otomatik doldurma başarısız');
-        }
-      } finally {
-        if (!cancelled) setSeeding(false);
+        await runProductDetailSeed({ force: false });
+      } catch {
+        /* toast runProductDetailSeed içinde */
       }
+      if (cancelled) seedStartedRef.current = false;
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [open, products, catalogCategories, refreshCatalog, showToast]);
+  }, [open, products, runProductDetailSeed]);
 
   const filteredProducts = useMemo(() => {
     const list = products || [];
@@ -423,17 +440,31 @@ export function ProductManagementPanel({ open, onClose }) {
               </button>
             </div>
 
-            <div className="relative mt-4">
-              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Ürün ara..."
-                className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/15 border border-white/20 text-white placeholder:text-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
-              />
+            <div className="relative mt-4 flex gap-2">
+              <div className="relative flex-1">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Ürün ara..."
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/15 border border-white/20 text-white placeholder:text-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={seeding}
+                onClick={() => {
+                  hapticLight();
+                  runProductDetailSeed({ force: true });
+                }}
+                className="shrink-0 px-3 py-2.5 rounded-xl bg-white/15 border border-white/20 text-white text-[11px] font-bold disabled:opacity-60 active:scale-95 transition-transform"
+                title="Tüm ürünlerin içerik ve kalori bilgisini yeniden oluştur"
+              >
+                {seeding ? '…' : 'Detayları yenile'}
+              </button>
             </div>
           </div>
         </div>
