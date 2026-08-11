@@ -343,7 +343,7 @@ export function ExistingOrdersPanel({
                       return (
                         <li
                           key={item.id}
-                          className={`flex items-center gap-2.5 px-3.5 py-2.5 ${
+                          className={`flex items-start gap-2.5 px-3.5 py-2.5 ${
                             bulkMode && selected ? 'bg-red-50/70' : 'bg-white'
                           }`}
                         >
@@ -355,12 +355,12 @@ export function ExistingOrdersPanel({
                             />
                           )}
 
-                          <span className="shrink-0 min-w-[2rem] h-7 px-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center tabular-nums">
+                          <span className="shrink-0 min-w-[2rem] h-7 px-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center tabular-nums mt-0.5">
                             {item.quantity}×
                           </span>
 
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">
+                            <p className="text-sm font-medium text-slate-800 leading-snug break-words">
                               {item.product_name}
                             </p>
                             {item.isGift && (
@@ -368,7 +368,7 @@ export function ExistingOrdersPanel({
                             )}
                           </div>
 
-                          <div className="shrink-0 flex flex-col items-end gap-1">
+                          <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
                             <span className="text-sm font-semibold text-slate-900 tabular-nums whitespace-nowrap">
                               {formatMoney(lineTotal)}
                             </span>

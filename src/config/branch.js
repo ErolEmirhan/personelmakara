@@ -91,6 +91,10 @@ export function canBulkCancelOrderItems(staff) {
   return !!staff?.is_manager;
 }
 
+export function canTransferProductItems(staff) {
+  return !!staff?.is_manager;
+}
+
 export function canTransferTable(staff) {
   return !!staff;
 }

@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
-import { canMergeTable } from '../../config/branch';
+import { canMergeTable, canTransferProductItems } from '../../config/branch';
 import { BottomSheet } from '../ui/BottomSheet';
 import { TransferTableModal } from '../modals/TransferTableModal';
+import { TransferProductModal } from '../modals/TransferProductModal';
 import { MergeTableModal } from '../modals/MergeTableModal';
 import { SalesRecordPanel } from '../sales/SalesRecordPanel';
 import { useBackHandler } from '../../hooks/useBackButton';
@@ -65,15 +66,18 @@ export function QuickActionsBottomSheet({ open, onClose }) {
   const { theme, branchKey } = useBranch();
   const { loadData, showToast } = useApp();
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showProductTransfer, setShowProductTransfer] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
   const [showSalesRecord, setShowSalesRecord] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const accent = theme.accentSolid;
   const canMerge = canMergeTable(staff, branchKey);
+  const canTransferProducts = canTransferProductItems(staff);
   const canSalesRecord = canViewBreakfastSalesRecord(staff);
 
   useBackHandler(showTransfer, () => setShowTransfer(false));
+  useBackHandler(showProductTransfer, () => setShowProductTransfer(false));
   useBackHandler(showMerge, () => setShowMerge(false));
   useBackHandler(showSalesRecord, () => setShowSalesRecord(false));
 
@@ -94,6 +98,15 @@ export function QuickActionsBottomSheet({ open, onClose }) {
   const openTransfer = () => {
     onClose();
     setShowTransfer(true);
+  };
+
+  const openProductTransfer = () => {
+    if (!canTransferProducts) {
+      showToast('error', 'Yetki gerekli', 'Ürün aktarmak için müdür yetkisi gerekir');
+      return;
+    }
+    onClose();
+    setShowProductTransfer(true);
   };
 
   const openMerge = () => {
@@ -150,6 +163,26 @@ export function QuickActionsBottomSheet({ open, onClose }) {
           />
 
           <ActionRow
+            title="Ürün aktar"
+            description={
+              canTransferProducts
+                ? 'Bir masadan seçili ürünleri başka masaya taşıyın'
+                : 'Müdür yetkisi gerekir'
+            }
+            locked={!canTransferProducts}
+            iconStyle={{
+              backgroundColor: canTransferProducts ? '#ecfeff' : '#f1f5f9',
+              color: canTransferProducts ? '#0d9488' : '#94a3b8',
+            }}
+            icon={(
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+              </svg>
+            )}
+            onClick={openProductTransfer}
+          />
+
+          <ActionRow
             title="Masa birleştir"
             description={
               canMerge
@@ -186,6 +219,7 @@ export function QuickActionsBottomSheet({ open, onClose }) {
       </BottomSheet>
 
       <TransferTableModal open={showTransfer} onClose={() => setShowTransfer(false)} />
+      <TransferProductModal open={showProductTransfer} onClose={() => setShowProductTransfer(false)} />
       <MergeTableModal open={showMerge} onClose={() => setShowMerge(false)} />
       <SalesRecordPanel open={showSalesRecord} onClose={() => setShowSalesRecord(false)} />
     </>
