@@ -53,6 +53,8 @@ export function AppProvider({ children }) {
   const [pendingTableCarts, setPendingTableCarts] = useState({});
   const [pendingCartPrompt, setPendingCartPrompt] = useState(null);
   const pendingTableCartsRef = useRef({});
+  const cartRef = useRef([]);
+  const orderNoteRef = useRef('');
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const tablesUnsubRef = useRef(null);
   const catalogUnsubRef = useRef(null);
@@ -219,6 +221,35 @@ export function AppProvider({ children }) {
   }, [pendingTableCarts]);
 
   useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  useEffect(() => {
+    orderNoteRef.current = orderNote;
+  }, [orderNote]);
+
+  const patchPendingTableCarts = useCallback((mutator) => {
+    setPendingTableCarts((prev) => {
+      const next = mutator(prev);
+      if (next === prev) return prev;
+      pendingTableCartsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const removePendingForTable = useCallback((tableId) => {
+    if (tableId == null) return;
+    const target = String(tableId);
+    patchPendingTableCarts((prev) => {
+      const key = Object.keys(prev).find((id) => String(id) === target);
+      if (!key) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, [patchPendingTableCarts]);
+
+  useEffect(() => {
     return registerAppBusyChecker(
       () => screen === 'order' && (cart.length > 0 || cartOpen)
     );
@@ -296,14 +327,16 @@ export function AppProvider({ children }) {
   }, []);
 
   const clearPendingTableCart = useCallback((tableId) => {
-    if (!tableId) return;
-    setPendingTableCarts((prev) => {
-      if (!prev[tableId]) return prev;
-      const next = { ...prev };
-      delete next[tableId];
-      return next;
-    });
-  }, []);
+    removePendingForTable(tableId);
+  }, [removePendingForTable]);
+
+  const finalizeSentOrder = useCallback((tableId) => {
+    cartRef.current = [];
+    orderNoteRef.current = '';
+    setCart([]);
+    setOrderNote('');
+    removePendingForTable(tableId);
+  }, [removePendingForTable]);
 
   const enterTable = useCallback(async (table, { openCart = false } = {}) => {
     setMainTabState(MAIN_TABS.TABLES);
@@ -314,40 +347,40 @@ export function AppProvider({ children }) {
 
     const saved = pendingTableCartsRef.current[table.id];
     if (saved?.cart?.length) {
+      cartRef.current = saved.cart;
+      orderNoteRef.current = saved.orderNote || '';
       setCart(saved.cart);
       setOrderNote(saved.orderNote || '');
-      setPendingTableCarts((prev) => {
-        const next = { ...prev };
-        delete next[table.id];
-        return next;
-      });
+      removePendingForTable(table.id);
     } else {
+      cartRef.current = [];
+      orderNoteRef.current = '';
       setCart([]);
       setOrderNote('');
     }
 
     await loadExistingOrders(table.id);
-  }, [loadExistingOrders]);
+  }, [loadExistingOrders, removePendingForTable]);
 
   const goBackToTables = useCallback(() => {
-    if (selectedTable?.id && cart.length) {
-      setPendingTableCarts((prev) => ({
+    const activeCart = cartRef.current;
+    const activeNote = orderNoteRef.current;
+
+    if (selectedTable?.id && activeCart.length) {
+      patchPendingTableCarts((prev) => ({
         ...prev,
         [selectedTable.id]: {
-          cart,
-          orderNote,
+          cart: activeCart,
+          orderNote: activeNote,
           table: selectedTable,
         },
       }));
     } else if (selectedTable?.id) {
-      setPendingTableCarts((prev) => {
-        if (!prev[selectedTable.id]) return prev;
-        const next = { ...prev };
-        delete next[selectedTable.id];
-        return next;
-      });
+      removePendingForTable(selectedTable.id);
     }
 
+    cartRef.current = [];
+    orderNoteRef.current = '';
     setScreen('tables');
     setSelectedTable(null);
     setCart([]);
@@ -355,7 +388,7 @@ export function AppProvider({ children }) {
     setSearchQuery('');
     setCurrentOrderItems([]);
     setCartOpen(false);
-  }, [selectedTable, cart, orderNote]);
+  }, [selectedTable, patchPendingTableCarts, removePendingForTable]);
 
   const dismissPendingCartPrompt = useCallback(() => {
     setPendingCartPrompt(null);
@@ -368,31 +401,25 @@ export function AppProvider({ children }) {
     setMainTabState(MAIN_TABS.TABLES);
     setSelectedTable(pendingTable);
     setScreen('order');
+    cartRef.current = pendingCart;
+    orderNoteRef.current = pendingNote || '';
     setCart(pendingCart);
     setOrderNote(pendingNote || '');
     setCartOpen(true);
     setSearchQuery('');
-    setPendingTableCarts((prev) => {
-      const next = { ...prev };
-      delete next[pendingTable.id];
-      return next;
-    });
+    removePendingForTable(pendingTable.id);
     await loadExistingOrders(pendingTable.id);
-  }, [pendingCartPrompt, loadExistingOrders]);
+  }, [pendingCartPrompt, loadExistingOrders, removePendingForTable]);
 
   const resolvePendingCartDiscard = useCallback(async () => {
     if (!pendingCartPrompt) return;
     const { pendingTableId, targetTable } = pendingCartPrompt;
     setPendingCartPrompt(null);
-    setPendingTableCarts((prev) => {
-      const next = { ...prev };
-      delete next[pendingTableId];
-      return next;
-    });
+    removePendingForTable(pendingTableId);
     if (targetTable) {
       await enterTable(targetTable);
     }
-  }, [pendingCartPrompt, enterTable]);
+  }, [pendingCartPrompt, enterTable, removePendingForTable]);
 
   const setMainTab = useCallback((tab) => {
     if (tab !== MAIN_TABS.TABLES && screen === 'order') {
@@ -520,7 +547,7 @@ export function AppProvider({ children }) {
         loadData, bootstrapCatalog, loadExistingOrders,
         selectTable, goBackToTables, enterTable,
         addToCart, updateCartItem, removeFromCart, clearCart,
-        sendOrder, cartTotal, cartCount, cartBump,
+        sendOrder, finalizeSentOrder, cartTotal, cartCount, cartBump,
         cartOpen, setCartOpen,
         pendingCartPrompt, dismissPendingCartPrompt,
         resolvePendingCartGoTo, resolvePendingCartDiscard,

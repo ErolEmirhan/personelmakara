@@ -37,7 +37,7 @@ export function Cart() {
     selectedTable, orderNote, setOrderNote,
     updateCartItem, removeFromCart, clearCart,
     showToast, goBackToTables, loadExistingOrders,
-    sendOrder, cartOpen, setCartOpen, clearPendingTableCart,
+    sendOrder, cartOpen, setCartOpen, finalizeSentOrder,
   } = useApp();
 
   const [sending, setSending] = useState(false);
@@ -134,8 +134,7 @@ export function Cart() {
       hapticSuccess();
       setSent(true);
       showToast('success', 'Sipariş Gönderildi', 'Kasaya iletildi, yazdırılıyor...');
-      clearPendingTableCart(tableId);
-      clearCart();
+      finalizeSentOrder(tableId);
       loadExistingOrders(tableId);
       setCartOpen(false);
 
