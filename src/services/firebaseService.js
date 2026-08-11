@@ -455,10 +455,13 @@ function mapProductDocs(docs, categoryId) {
     const id = resolveProductId(d, p);
     products.push({
       id,
+      firestoreDocId: d.id,
       name: p.name || '',
       price: Number(p.price) || 0,
       category_id: typeof p.category_id === 'string' ? parseInt(p.category_id, 10) : p.category_id,
       imageRaw: extractProductImageRaw(p),
+      content: p.content || p.description || p.ingredients || '',
+      calories: p.calories != null && p.calories !== '' ? String(p.calories) : '',
       stock: p.stock,
       trackStock: p.trackStock || p.track_stock || false,
     });
@@ -486,6 +489,56 @@ export function extractProductImageRaw(p) {
 export async function fetchProducts(categoryId) {
   const snap = await getDocs(collection(requireMainDb(), 'products'));
   return mapProductDocs(snap.docs, categoryId);
+}
+
+async function resolveProductDocRef(productId) {
+  const db = requireMainDb();
+  const idStr = String(productId);
+
+  const directRef = doc(db, 'products', idStr);
+  const directSnap = await getDoc(directRef);
+  if (directSnap.exists()) return directRef;
+
+  const snap = await getDocs(collection(db, 'products'));
+  for (const d of snap.docs) {
+    const data = d.data();
+    const pid = resolveProductId(d, data);
+    if (String(pid) === idStr) return d.ref;
+  }
+  return null;
+}
+
+/** Müdür paneli — ürün adı, fiyat, içerik, kalori, görsel güncelleme */
+export async function updateProductRecord(productId, fields = {}) {
+  const ref = await resolveProductDocRef(productId);
+  if (!ref) throw new Error('Ürün bulunamadı');
+
+  const patch = { updatedAt: new Date().toISOString() };
+
+  if (fields.name != null) {
+    const name = String(fields.name).trim();
+    if (!name) throw new Error('Ürün adı gerekli');
+    patch.name = name;
+  }
+  if (fields.price != null) {
+    const price = Number(fields.price);
+    if (!Number.isFinite(price) || price < 0) throw new Error('Geçerli bir fiyat girin');
+    patch.price = price;
+  }
+  if (fields.content != null) {
+    patch.content = String(fields.content).trim();
+  }
+  if (fields.calories != null) {
+    patch.calories = String(fields.calories).trim();
+  }
+  if (fields.image_base64 !== undefined) {
+    const imageValue = fields.image_base64;
+    patch.image_base64 = imageValue;
+    patch.image = imageValue;
+  }
+
+  await updateDoc(ref, patch);
+  return { success: true };
 }
 
 /** Kasa/masaüstünden eklenen ürünler dahil katalog canlı senkronu */

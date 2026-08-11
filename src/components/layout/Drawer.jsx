@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
-import { staffRoleLabel } from '../../utils/staffRole';
+import { staffRoleLabel, canManageProducts } from '../../utils/staffRole';
 import { StaffAvatar } from '../ui/StaffAvatar';
 import { SidePanel } from '../ui/SidePanel';
 import { LogoutModal } from '../modals/LogoutModal';
+import { ProductManagementPanel } from '../products/ProductManagementPanel';
 import { useBackHandler } from '../../hooks/useBackButton';
 import { MAIN_TABS } from '../../constants/nav';
 
@@ -110,8 +111,10 @@ export function Drawer() {
 
   const [showLogout, setShowLogout] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [productMgmtOpen, setProductMgmtOpen] = useState(false);
 
   const accent = theme.accentSolid;
+  const showProductMgmt = canManageProducts(staff);
 
   const salonStats = useMemo(() => {
     const occupied = tables.filter((t) => t.hasOrder).length;
@@ -120,6 +123,7 @@ export function Drawer() {
 
   useBackHandler(drawerOpen, () => setDrawerOpen(false));
   useBackHandler(showLogout, () => setShowLogout(false));
+  useBackHandler(productMgmtOpen, () => setProductMgmtOpen(false));
 
   const navigate = (tab) => {
     setMainTab(tab);
@@ -234,6 +238,28 @@ export function Drawer() {
                     <span className="block text-[11px] text-slate-400 mt-0.5">Masalar, menü ve profil</span>
                   </span>
                 </button>
+
+                {showProductMgmt && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrawerOpen(false);
+                      setProductMgmtOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-left bg-white border border-slate-200/80 shadow-sm active:scale-[0.99] transition-all mt-1"
+                  >
+                    <span className="shrink-0 w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
+                      </svg>
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-slate-800">Ürün yönetimi</span>
+                      <span className="block text-[11px] text-slate-400 mt-0.5">İsim, fiyat, görsel ve içerik</span>
+                    </span>
+                  </button>
+                )}
               </section>
             </div>
 
@@ -258,6 +284,7 @@ export function Drawer() {
           </SidePanel>
 
       <LogoutModal open={showLogout} onClose={() => setShowLogout(false)} />
+      <ProductManagementPanel open={productMgmtOpen} onClose={() => setProductMgmtOpen(false)} />
     </>
   );
 }

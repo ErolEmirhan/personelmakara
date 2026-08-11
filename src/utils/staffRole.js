@@ -44,3 +44,9 @@ export function canViewDailySalesHistory(staff) {
   if (!staff) return false;
   return !!staff.is_manager;
 }
+
+/** Ürün yönetimi paneli (müdür) */
+export function canManageProducts(staff) {
+  if (!staff) return false;
+  return !!staff.is_manager;
+}
