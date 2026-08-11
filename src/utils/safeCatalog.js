@@ -31,6 +31,8 @@ export function sanitizeProduct(raw) {
     category_id: Number.isFinite(categoryId) ? categoryId : null,
     stock: Number(raw.stock) || 0,
     trackStock: !!(raw.trackStock || raw.track_stock),
+    content: String(raw.content || raw.description || raw.ingredients || '').trim(),
+    calories: raw.calories != null && raw.calories !== '' ? String(raw.calories).trim() : '',
     imageSrc: raw.imageSrc || null,
   };
 }

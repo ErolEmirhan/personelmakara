@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SidePanel } from '../ui/SidePanel';
 import { BottomSheet } from '../ui/BottomSheet';
 import { ProfileImageCropModal } from '../modals/ProfileImageCropModal';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../hooks/useBackButton';
-import { updateProductRecord } from '../../services/firebaseService';
+import { seedMissingProductDetails, updateProductRecord } from '../../services/firebaseService';
 import { clearProductImageCache, normalizeProductImage } from '../../services/productImageCache';
 import { prepareSupportImageDataUrl, validateSupportImageDataUrl } from '../../services/staffProfileImage';
 import { isBestSellersCategory } from '../../utils/bestSellers';
+import { productNeedsDetailSeed } from '../../utils/productDetailDefaults';
 import { hapticLight } from '../../utils/haptic';
+
+const SHEET_Z = 'z-[9200]';
 
 function ProductThumb({ imageSrc, name, accent }) {
   const initial = (name || '?').trim().charAt(0).toUpperCase();
@@ -120,11 +124,15 @@ function ProductEditorRow({
       </div>
 
       <div className="px-3.5 pb-3.5 flex flex-wrap gap-2">
-        <ActionChip onClick={() => onOpenContent(product)}>İçerik ekle</ActionChip>
+        <ActionChip onClick={() => onOpenContent(product)}>
+          {hasContent ? 'İçerik düzenle' : 'İçerik ekle'}
+        </ActionChip>
         <ActionChip onClick={() => onOpenImage(product)}>
           {hasImage ? 'Görsel değiştir' : 'Görsel ekle'}
         </ActionChip>
-        <ActionChip onClick={() => onOpenCalories(product)}>Kalori bilgisi ekle</ActionChip>
+        <ActionChip onClick={() => onOpenCalories(product)}>
+          {hasCalories ? 'Kalori düzenle' : 'Kalori bilgisi ekle'}
+        </ActionChip>
         {dirty && (
           <button
             type="button"
@@ -137,6 +145,23 @@ function ProductEditorRow({
           </button>
         )}
       </div>
+
+      {(hasContent || hasCalories) && (
+        <div className="px-3.5 pb-3.5 pt-0 space-y-2 border-t border-slate-50">
+          {hasContent && (
+            <div className="rounded-xl bg-slate-50/90 border border-slate-100 px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">İçerik</p>
+              <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{product.content}</p>
+            </div>
+          )}
+          {hasCalories && (
+            <div className="rounded-xl bg-orange-50/80 border border-orange-100 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-orange-400 mb-0.5">Kalori</p>
+              <p className="text-sm font-bold text-orange-900">{product.calories}</p>
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -162,7 +187,13 @@ function TextFieldSheet({ open, onClose, title, subtitle, value, onSave, multili
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={title} subtitle={subtitle}>
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title={title}
+      subtitle={subtitle}
+      zIndexClass={SHEET_Z}
+    >
       <div className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-4">
         {multiline ? (
           <textarea
@@ -205,7 +236,9 @@ export function ProductManagementPanel({ open, onClose }) {
   const [calorieTarget, setCalorieTarget] = useState(null);
   const [cropImageSrc, setCropImageSrc] = useState(null);
   const [imageTarget, setImageTarget] = useState(null);
+  const [seeding, setSeeding] = useState(false);
   const fileRef = useRef(null);
+  const seedStartedRef = useRef(false);
 
   const accent = theme.accent;
   const accentSolid = theme.accentSolid;
@@ -227,6 +260,7 @@ export function ProductManagementPanel({ open, onClose }) {
       setCalorieTarget(null);
       setCropImageSrc(null);
       setImageTarget(null);
+      seedStartedRef.current = false;
     }
   }, [open]);
 
@@ -234,6 +268,36 @@ export function ProductManagementPanel({ open, onClose }) {
     if (branchKey) await clearProductImageCache(branchKey);
     await loadData({ force: true });
   }, [branchKey, loadData]);
+
+  useEffect(() => {
+    if (!open || seedStartedRef.current || !(products || []).length) return undefined;
+    if (!(products || []).some(productNeedsDetailSeed)) return undefined;
+
+    seedStartedRef.current = true;
+    let cancelled = false;
+
+    (async () => {
+      setSeeding(true);
+      try {
+        const { updated } = await seedMissingProductDetails(products, catalogCategories);
+        if (cancelled) return;
+        if (updated > 0) {
+          await refreshCatalog();
+          showToast('success', 'Menü', `${updated} ürüne içerik ve kalori eklendi`);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          showToast('error', 'Hata', err?.message || 'Otomatik doldurma başarısız');
+        }
+      } finally {
+        if (!cancelled) setSeeding(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, products, catalogCategories, refreshCatalog, showToast]);
 
   const filteredProducts = useMemo(() => {
     const list = products || [];
@@ -316,6 +380,8 @@ export function ProductManagementPanel({ open, onClose }) {
     }
   };
 
+  useBackHandler(!!contentTarget, () => setContentTarget(null));
+  useBackHandler(!!calorieTarget, () => setCalorieTarget(null));
   useBackHandler(open && !contentTarget && !calorieTarget && !cropImageSrc, onClose);
 
   const selectedCategory = catalogCategories.find((c) => c.id === selectedCategoryId);
@@ -341,7 +407,9 @@ export function ProductManagementPanel({ open, onClose }) {
                 <h2 className="text-white font-display font-bold text-xl tracking-tight mt-1">
                   Ürün yönetimi
                 </h2>
-                <p className="text-white/70 text-xs mt-1">Menü, fiyat ve ürün detayları</p>
+                <p className="text-white/70 text-xs mt-1">
+                  {seeding ? 'Ürün bilgileri hazırlanıyor…' : 'Menü, fiyat ve ürün detayları'}
+                </p>
               </div>
               <button
                 type="button"
@@ -449,28 +517,33 @@ export function ProductManagementPanel({ open, onClose }) {
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
       </SidePanel>
 
-      <TextFieldSheet
-        open={!!contentTarget}
-        onClose={() => setContentTarget(null)}
-        title="İçerik ekle"
-        subtitle={contentTarget?.name}
-        value={contentTarget?.content || ''}
-        multiline
-        placeholder="Malzemeler, alerjenler, açıklama..."
-        accentSolid={accentSolid}
-        onSave={handleSaveContent}
-      />
+      {createPortal(
+        <>
+          <TextFieldSheet
+            open={!!contentTarget}
+            onClose={() => setContentTarget(null)}
+            title="İçerik"
+            subtitle={contentTarget?.name}
+            value={contentTarget?.content || ''}
+            multiline
+            placeholder="Malzemeler, alerjenler, açıklama..."
+            accentSolid={accentSolid}
+            onSave={handleSaveContent}
+          />
 
-      <TextFieldSheet
-        open={!!calorieTarget}
-        onClose={() => setCalorieTarget(null)}
-        title="Kalori bilgisi"
-        subtitle={calorieTarget?.name}
-        value={calorieTarget?.calories || ''}
-        placeholder="ör. 450 kcal"
-        accentSolid={accentSolid}
-        onSave={handleSaveCalories}
-      />
+          <TextFieldSheet
+            open={!!calorieTarget}
+            onClose={() => setCalorieTarget(null)}
+            title="Kalori bilgisi"
+            subtitle={calorieTarget?.name}
+            value={calorieTarget?.calories || ''}
+            placeholder="ör. 450 kcal / porsiyon"
+            accentSolid={accentSolid}
+            onSave={handleSaveCalories}
+          />
+        </>,
+        document.body
+      )}
 
       <ProfileImageCropModal
         open={!!cropImageSrc}

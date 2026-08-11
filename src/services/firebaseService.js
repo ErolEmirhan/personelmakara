@@ -26,6 +26,10 @@ import {
 import { getBranchTheme, YAN_URUNLER_CATEGORY_ID } from '../config/branch';
 import { canSendStaffAnnouncements } from '../utils/staffRole';
 import { normalizeProductImage } from './productImageCache';
+import {
+  buildDefaultProductCalories,
+  buildDefaultProductContent,
+} from '../utils/productDetailDefaults';
 
 let mainApp = null;
 let tablesApp = null;
@@ -539,6 +543,32 @@ export async function updateProductRecord(productId, fields = {}) {
 
   await updateDoc(ref, patch);
   return { success: true };
+}
+
+/** Eksik içerik/kalori alanlarını tutarlı şablona göre doldurur */
+export async function seedMissingProductDetails(products, categories) {
+  const categoryMap = new Map((categories || []).map((c) => [c.id, c.name]));
+  let updated = 0;
+
+  for (const product of products || []) {
+    const hasContent = !!(product.content || '').trim();
+    const hasCalories = !!(product.calories || '').trim();
+    if (hasContent && hasCalories) continue;
+
+    const categoryName = categoryMap.get(product.category_id) || 'Menü';
+    const patch = {};
+    if (!hasContent) {
+      patch.content = buildDefaultProductContent(product.name, categoryName);
+    }
+    if (!hasCalories) {
+      patch.calories = buildDefaultProductCalories(product.name, categoryName);
+    }
+
+    await updateProductRecord(product.id, patch);
+    updated += 1;
+  }
+
+  return { updated };
 }
 
 /** Kasa/masaüstünden eklenen ürünler dahil katalog canlı senkronu */
