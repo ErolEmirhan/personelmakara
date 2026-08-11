@@ -5,7 +5,7 @@ import './index.css';
 import { AppErrorBoundary } from './components/ui/AppErrorBoundary';
 import { lockViewportZoom } from './utils/disableZoom';
 import { migrateServiceWorkerCache } from './pwa/migrateServiceWorker';
-import { initPwaUpdates } from './pwa/registerUpdates';
+import { initPwaUpdates, markPwaUpdateSettled } from './pwa/registerUpdates';
 import { installChunkLoadRecovery, isRecoverableDeployError, redirectToCacheReset } from './utils/chunkLoadRecovery';
 
 installChunkLoadRecovery();
@@ -28,6 +28,7 @@ async function boot() {
   );
 
   window.__makaraMarkBootOk?.();
+  markPwaUpdateSettled();
   window.dispatchEvent(new CustomEvent('makara-boot-complete'));
 }
 

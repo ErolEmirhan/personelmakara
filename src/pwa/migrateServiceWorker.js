@@ -71,13 +71,13 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
   try {
     if (!sessionStorage.getItem(MIGRATION_RELOAD_KEY)) {
       sessionStorage.setItem(MIGRATION_RELOAD_KEY, '1');
-      signalAppUpdating();
+      if (forceReset) signalAppUpdating();
       window.location.replace(stripResetParam(window.location.href));
       return;
     }
     sessionStorage.removeItem(MIGRATION_RELOAD_KEY);
   } catch {
-    signalAppUpdating();
+    if (forceReset) signalAppUpdating();
     window.location.replace(stripResetParam(window.location.href));
   }
 }

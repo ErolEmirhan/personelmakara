@@ -6,6 +6,7 @@ import {
 } from '../../pwa/updateSplash';
 
 const POST_MIGRATE_HIDE_MS = 2000;
+const OVERLAY_SAFETY_HIDE_MS = 45_000;
 
 export function AppUpdateHost() {
   const [visible, setVisible] = useState(false);
@@ -13,6 +14,7 @@ export function AppUpdateHost() {
 
   useEffect(() => {
     let hideTimer = null;
+    let safetyTimer = null;
 
     try {
       if (sessionStorage.getItem(APP_UPDATING_KEY) === '1') {
@@ -32,9 +34,16 @@ export function AppUpdateHost() {
     };
 
     window.addEventListener(APP_UPDATING_EVENT, onUpdating);
+
+    safetyTimer = window.setTimeout(() => {
+      setVisible(false);
+      setAwaitingReload(false);
+    }, OVERLAY_SAFETY_HIDE_MS);
+
     return () => {
       window.removeEventListener(APP_UPDATING_EVENT, onUpdating);
       if (hideTimer) clearTimeout(hideTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
     };
   }, []);
 

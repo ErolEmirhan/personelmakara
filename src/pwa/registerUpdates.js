@@ -3,21 +3,65 @@ import { redirectToCacheReset } from '../utils/chunkLoadRecovery';
 import { isAppBusy } from '../utils/appBusy';
 import { signalAppUpdating } from './updateSplash';
 
-/** Açık PWA'da yeni deploy'u yakalamak için kontrol aralığı */
-const UPDATE_INTERVAL_MS = 12_000;
-/** Meşgul kullanıcı için yeniden deneme aralığı */
-const BUSY_RETRY_MS = 8000;
+/** SW güncelleme kontrolü — çok sık tetiklenmesin */
+const SW_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+/** Aynı oturumda art arda yenileme üst sınırı */
+const RELOAD_COOLDOWN_MS = 90_000;
+/** Meşgul kullanıcı (sepet dolu vb.) için yeniden deneme */
+const BUSY_RETRY_MS = 15_000;
+/** Uzak build ile uyumsuzluk deneme limiti (sonsuz döngü koruması) */
+const MAX_BUILD_MISMATCH_ATTEMPTS = 2;
+
+const LAST_RELOAD_AT_KEY = 'makara-last-reload-at';
+const BUILD_MISMATCH_KEY = 'makara-build-mismatch-attempts';
 
 let reloadScheduled = false;
-let hadServiceWorkerController = false;
+let updateOverlayShown = false;
 
 function readLocalBuildVersion() {
   return document.querySelector('meta[name="makara-build"]')?.getAttribute('content') || null;
 }
 
-function scheduleReload() {
-  if (reloadScheduled) return;
+function readSessionNumber(key) {
+  try {
+    return Number(sessionStorage.getItem(key) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function writeSessionNumber(key, value) {
+  try {
+    sessionStorage.setItem(key, String(value));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearSessionKey(key) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+function canScheduleReload() {
+  if (reloadScheduled) return false;
+  const lastReloadAt = readSessionNumber(LAST_RELOAD_AT_KEY);
+  if (lastReloadAt && Date.now() - lastReloadAt < RELOAD_COOLDOWN_MS) return false;
+  return true;
+}
+
+function showUpdateOverlayOnce() {
+  if (updateOverlayShown) return;
+  updateOverlayShown = true;
   signalAppUpdating();
+}
+
+function scheduleReload() {
+  if (!canScheduleReload()) return;
+  showUpdateOverlayOnce();
 
   const attempt = () => {
     if (isAppBusy()) {
@@ -25,6 +69,7 @@ function scheduleReload() {
       return;
     }
     reloadScheduled = true;
+    writeSessionNumber(LAST_RELOAD_AT_KEY, Date.now());
     redirectToCacheReset();
   };
 
@@ -35,9 +80,12 @@ async function checkRemoteBuildVersion() {
   const local = readLocalBuildVersion();
   if (!local) return;
 
+  const attempts = readSessionNumber(BUILD_MISMATCH_KEY);
+  if (attempts >= MAX_BUILD_MISMATCH_ATTEMPTS) return;
+
   try {
     const base = import.meta.env.BASE_URL || '/';
-    const url = new URL(`index.html`, `${window.location.origin}${base}`);
+    const url = new URL('index.html', `${window.location.origin}${base}`);
     url.searchParams.set('makara-build-check', String(Date.now()));
     const res = await fetch(url.toString(), { cache: 'no-store' });
     if (!res.ok) return;
@@ -45,7 +93,12 @@ async function checkRemoteBuildVersion() {
     const match = html.match(/name=["']makara-build["']\s+content=["']([^"']+)["']/i);
     const remote = match?.[1];
     if (remote && remote !== local) {
+      writeSessionNumber(BUILD_MISMATCH_KEY, attempts + 1);
       scheduleReload();
+      return;
+    }
+    if (remote === local) {
+      clearSessionKey(BUILD_MISMATCH_KEY);
     }
   } catch {
     /* çevrimdışı */
@@ -53,20 +106,33 @@ async function checkRemoteBuildVersion() {
 }
 
 function scheduleUpdateChecks(registration) {
-  const check = () => {
+  const checkSwUpdate = () => {
     registration.update().catch(() => {});
+  };
+
+  const checkBuildWhenVisible = () => {
     checkRemoteBuildVersion();
   };
 
-  check();
-  window.setInterval(check, UPDATE_INTERVAL_MS);
+  // İlk SW kontrolü hemen; build karşılaştırması biraz gecikmeli (açılışta yanlış alarm olmasın)
+  checkSwUpdate();
+  window.setTimeout(checkBuildWhenVisible, 45_000);
+
+  window.setInterval(checkSwUpdate, SW_UPDATE_INTERVAL_MS);
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') check();
+    if (document.visibilityState === 'visible') {
+      checkSwUpdate();
+      checkBuildWhenVisible();
+    }
   });
 
-  window.addEventListener('focus', check);
-  window.addEventListener('online', check);
+  window.addEventListener('focus', () => {
+    checkSwUpdate();
+    checkBuildWhenVisible();
+  });
+
+  window.addEventListener('online', checkSwUpdate);
 
   registration.addEventListener('updatefound', () => {
     const worker = registration.installing;
@@ -80,30 +146,15 @@ function scheduleUpdateChecks(registration) {
   });
 }
 
-function installServiceWorkerListeners() {
-  if (!('serviceWorker' in navigator)) return;
-
-  hadServiceWorkerController = !!navigator.serviceWorker.controller;
-
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data?.type === 'MAKARA_SW_ACTIVATED') {
-      scheduleReload();
-    }
-  });
-
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadServiceWorkerController) {
-      hadServiceWorkerController = true;
-      return;
-    }
-    scheduleReload();
-  });
+/** Başarılı açılış — build uyumsuzluk sayacını sıfırla */
+export function markPwaUpdateSettled() {
+  clearSessionKey(BUILD_MISMATCH_KEY);
+  updateOverlayShown = false;
+  reloadScheduled = false;
 }
 
 export function initPwaUpdates() {
   if (!('serviceWorker' in navigator)) return;
-
-  installServiceWorkerListeners();
 
   try {
     registerSW({
