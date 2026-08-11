@@ -178,7 +178,7 @@ export function StaffAssignModal({ open, onClose, member, branchKey, accent, onS
         />
         <RoleToggle
           label="Müdür"
-          description="Aynı anda yalnızca bir müdür atanabilir"
+          description="Masa birleştirme, duyuru gönderme ve müdür yetkileri"
           checked={isManager}
           onChange={(val) => {
             setIsManager(val);

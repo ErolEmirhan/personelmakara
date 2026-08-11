@@ -23,6 +23,8 @@ import {
   getLastNotificationsVisit,
   markNotificationsVisited,
 } from '../utils/announcementUnread';
+import { sanitizeCatalog } from '../utils/safeCatalog';
+import { registerAppBusyChecker } from '../utils/appBusy';
 
 import { ToastOverlay } from '../components/ui/Toast';
 
@@ -47,6 +49,10 @@ export function AppProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [cartBump, setCartBump] = useState(0);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [pendingTableCarts, setPendingTableCarts] = useState({});
+  const [pendingCartPrompt, setPendingCartPrompt] = useState(null);
+  const pendingTableCartsRef = useRef({});
   const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const tablesUnsubRef = useRef(null);
   const catalogUnsubRef = useRef(null);
@@ -82,9 +88,10 @@ export function AppProvider({ children }) {
     if (!force) {
       const cached = await getCatalogCache(branchKey);
       if (cached?.categories?.length) {
-        setCategories(cached.categories);
-        setProducts(cached.products || []);
-        setSelectedCategory((prev) => prev ?? cached.categories[0]?.id ?? null);
+        const safe = sanitizeCatalog(cached.categories, cached.products || []);
+        setCategories(safe.categories);
+        setProducts(safe.products);
+        setSelectedCategory((prev) => prev ?? safe.categories[0]?.id ?? null);
         setLoading(false);
         return;
       }
@@ -93,11 +100,12 @@ export function AppProvider({ children }) {
     setLoading(true);
     try {
       const [cats, prods] = await Promise.all([fetchCategories(), fetchProducts()]);
-      setCategories(cats);
       const withImages = await resolveProductImages(branchKey, prods);
-      setProducts(withImages);
-      await setCatalogCache(branchKey, { categories: cats, products: withImages });
-      setSelectedCategory((prev) => prev ?? cats[0]?.id ?? null);
+      const safe = sanitizeCatalog(cats, withImages);
+      setCategories(safe.categories);
+      setProducts(safe.products);
+      await setCatalogCache(branchKey, { categories: safe.categories, products: safe.products });
+      setSelectedCategory((prev) => prev ?? safe.categories[0]?.id ?? null);
     } catch {
       showToast('error', 'Hata', 'Veri yüklenemedi');
     } finally {
@@ -109,14 +117,15 @@ export function AppProvider({ children }) {
     if (!branchKey || !catalog) return;
     try {
       const withImages = await resolveProductImages(branchKey, catalog.products || []);
-      setCategories(catalog.categories || []);
-      setProducts(withImages);
+      const safe = sanitizeCatalog(catalog.categories || [], withImages);
+      setCategories(safe.categories);
+      setProducts(safe.products);
       await setCatalogCache(branchKey, {
-        categories: catalog.categories || [],
-        products: withImages,
+        categories: safe.categories,
+        products: safe.products,
       });
       setSelectedCategory((prev) => {
-        const cats = catalog.categories || [];
+        const cats = safe.categories;
         if (prev != null && cats.some((c) => c.id === prev)) return prev;
         return cats[0]?.id ?? null;
       });
@@ -139,9 +148,10 @@ export function AppProvider({ children }) {
       const cached = await getCatalogCache(branchKey);
       report(20);
       if (cached?.categories?.length) {
-        setCategories(cached.categories);
-        setProducts(cached.products || []);
-        setSelectedCategory((prev) => prev ?? cached.categories[0]?.id ?? null);
+        const safe = sanitizeCatalog(cached.categories, cached.products || []);
+        setCategories(safe.categories);
+        setProducts(safe.products);
+        setSelectedCategory((prev) => prev ?? safe.categories[0]?.id ?? null);
         report(100);
         return;
       }
@@ -151,12 +161,13 @@ export function AppProvider({ children }) {
       report(48);
       const prods = await fetchProducts();
       report(64);
-      setCategories(cats);
       const withImages = await resolveProductImages(branchKey, prods);
       report(86);
-      setProducts(withImages);
-      await setCatalogCache(branchKey, { categories: cats, products: withImages });
-      setSelectedCategory((prev) => prev ?? cats[0]?.id ?? null);
+      const safe = sanitizeCatalog(cats, withImages);
+      setCategories(safe.categories);
+      setProducts(safe.products);
+      await setCatalogCache(branchKey, { categories: safe.categories, products: safe.products });
+      setSelectedCategory((prev) => prev ?? safe.categories[0]?.id ?? null);
       report(100);
     } catch {
       showToast('error', 'Hata', 'Veri yüklenemedi');
@@ -202,6 +213,16 @@ export function AppProvider({ children }) {
   useEffect(() => {
     mainTabRef.current = mainTab;
   }, [mainTab]);
+
+  useEffect(() => {
+    pendingTableCartsRef.current = pendingTableCarts;
+  }, [pendingTableCarts]);
+
+  useEffect(() => {
+    return registerAppBusyChecker(
+      () => screen === 'order' && (cart.length > 0 || cartOpen)
+    );
+  }, [screen, cart.length, cartOpen]);
 
   useEffect(() => {
     if (!configured || !branchKey || !staff?.id) {
@@ -274,14 +295,104 @@ export function AppProvider({ children }) {
     }
   }, []);
 
+  const clearPendingTableCart = useCallback((tableId) => {
+    if (!tableId) return;
+    setPendingTableCarts((prev) => {
+      if (!prev[tableId]) return prev;
+      const next = { ...prev };
+      delete next[tableId];
+      return next;
+    });
+  }, []);
+
+  const enterTable = useCallback(async (table, { openCart = false } = {}) => {
+    setMainTabState(MAIN_TABS.TABLES);
+    setSelectedTable(table);
+    setScreen('order');
+    setSearchQuery('');
+    setCartOpen(openCart);
+
+    const saved = pendingTableCartsRef.current[table.id];
+    if (saved?.cart?.length) {
+      setCart(saved.cart);
+      setOrderNote(saved.orderNote || '');
+      setPendingTableCarts((prev) => {
+        const next = { ...prev };
+        delete next[table.id];
+        return next;
+      });
+    } else {
+      setCart([]);
+      setOrderNote('');
+    }
+
+    await loadExistingOrders(table.id);
+  }, [loadExistingOrders]);
+
   const goBackToTables = useCallback(() => {
+    if (selectedTable?.id && cart.length) {
+      setPendingTableCarts((prev) => ({
+        ...prev,
+        [selectedTable.id]: {
+          cart,
+          orderNote,
+          table: selectedTable,
+        },
+      }));
+    } else if (selectedTable?.id) {
+      setPendingTableCarts((prev) => {
+        if (!prev[selectedTable.id]) return prev;
+        const next = { ...prev };
+        delete next[selectedTable.id];
+        return next;
+      });
+    }
+
     setScreen('tables');
     setSelectedTable(null);
     setCart([]);
     setOrderNote('');
     setSearchQuery('');
     setCurrentOrderItems([]);
+    setCartOpen(false);
+  }, [selectedTable, cart, orderNote]);
+
+  const dismissPendingCartPrompt = useCallback(() => {
+    setPendingCartPrompt(null);
   }, []);
+
+  const resolvePendingCartGoTo = useCallback(async () => {
+    if (!pendingCartPrompt) return;
+    const { pendingTable, pendingCart, pendingNote } = pendingCartPrompt;
+    setPendingCartPrompt(null);
+    setMainTabState(MAIN_TABS.TABLES);
+    setSelectedTable(pendingTable);
+    setScreen('order');
+    setCart(pendingCart);
+    setOrderNote(pendingNote || '');
+    setCartOpen(true);
+    setSearchQuery('');
+    setPendingTableCarts((prev) => {
+      const next = { ...prev };
+      delete next[pendingTable.id];
+      return next;
+    });
+    await loadExistingOrders(pendingTable.id);
+  }, [pendingCartPrompt, loadExistingOrders]);
+
+  const resolvePendingCartDiscard = useCallback(async () => {
+    if (!pendingCartPrompt) return;
+    const { pendingTableId, targetTable } = pendingCartPrompt;
+    setPendingCartPrompt(null);
+    setPendingTableCarts((prev) => {
+      const next = { ...prev };
+      delete next[pendingTableId];
+      return next;
+    });
+    if (targetTable) {
+      await enterTable(targetTable);
+    }
+  }, [pendingCartPrompt, enterTable]);
 
   const setMainTab = useCallback((tab) => {
     if (tab !== MAIN_TABS.TABLES && screen === 'order') {
@@ -291,13 +402,25 @@ export function AppProvider({ children }) {
   }, [screen, goBackToTables]);
 
   const selectTable = useCallback(async (table) => {
-    setMainTabState(MAIN_TABS.TABLES);
-    setSelectedTable(table);
-    setScreen('order');
-    setCart([]);
-    setOrderNote('');
-    await loadExistingOrders(table.id);
-  }, [loadExistingOrders]);
+    const pending = pendingTableCartsRef.current;
+    const otherPending = Object.entries(pending).find(
+      ([id, data]) => id !== String(table.id) && data?.cart?.length > 0
+    );
+
+    if (otherPending) {
+      const [, data] = otherPending;
+      setPendingCartPrompt({
+        pendingTableId: otherPending[0],
+        pendingTable: data.table,
+        pendingCart: data.cart,
+        pendingNote: data.orderNote,
+        targetTable: table,
+      });
+      return;
+    }
+
+    await enterTable(table);
+  }, [enterTable]);
 
   const addToCart = useCallback((product, options = {}) => {
     const { isGift = false, extraNote = '', quantity = 1, displayName } = options;
@@ -395,9 +518,13 @@ export function AppProvider({ children }) {
         loading, drawerOpen, setDrawerOpen,
         showToast,
         loadData, bootstrapCatalog, loadExistingOrders,
-        selectTable, goBackToTables,
+        selectTable, goBackToTables, enterTable,
         addToCart, updateCartItem, removeFromCart, clearCart,
         sendOrder, cartTotal, cartCount, cartBump,
+        cartOpen, setCartOpen,
+        pendingCartPrompt, dismissPendingCartPrompt,
+        resolvePendingCartGoTo, resolvePendingCartDiscard,
+        clearPendingTableCart,
         optimisticallyCancelOrderItem,
         registerBackHandler, runBackHandlers,
       }}

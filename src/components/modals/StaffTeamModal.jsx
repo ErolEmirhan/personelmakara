@@ -436,6 +436,8 @@ export function StaffTeamModal({ open, onClose, branchKey }) {
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         member={deleteTarget}
+        branchKey={branchKey}
+        deletedBy={currentStaff?.id}
         onDeleted={async (staffId) => {
           setStaffList((prev) => prev.filter((s) => s.id !== staffId));
           await reloadStaff();

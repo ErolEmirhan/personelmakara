@@ -7,29 +7,36 @@ export function SkeletonBlock({ className = '' }) {
   );
 }
 
-export function ProductCardSkeleton() {
+export function ProductCardSkeleton({ compact = false }) {
   return (
-    <div className="flex flex-col rounded-[1.35rem] bg-white border border-slate-100/90 overflow-hidden shadow-[0_4px_24px_rgba(15,23,42,0.04)]">
-      <SkeletonBlock className="w-full aspect-[5/4] rounded-none" />
-      <div className="px-3 pt-3 pb-3.5 space-y-2">
-        <SkeletonBlock className="h-3.5 w-[88%]" />
-        <SkeletonBlock className="h-3.5 w-[62%]" />
-        <SkeletonBlock className="h-5 w-[40%] mt-2" />
+    <div className={`flex flex-col bg-white border border-slate-100/90 overflow-hidden shadow-[0_4px_24px_rgba(15,23,42,0.04)] ${
+      compact ? 'rounded-xl' : 'rounded-[1.35rem]'
+    }`}>
+      <SkeletonBlock className={`w-full rounded-none ${compact ? 'aspect-square' : 'aspect-[5/4]'}`} />
+      <div className={compact ? 'px-1.5 pt-1.5 pb-2 space-y-1' : 'px-3 pt-3 pb-3.5 space-y-2'}>
+        <SkeletonBlock className={compact ? 'h-2.5 w-[90%]' : 'h-3.5 w-[88%]'} />
+        {!compact && <SkeletonBlock className="h-3.5 w-[62%]" />}
+        <SkeletonBlock className={compact ? 'h-3 w-[50%] mt-1' : 'h-5 w-[40%] mt-2'} />
       </div>
     </div>
   );
 }
 
-export function ProductGridSkeleton({ count = 6 }) {
+export function ProductGridSkeleton({ count = 6, columns = 2, compact = false }) {
+  const gridClass =
+    columns === 3
+      ? 'grid grid-cols-3 gap-2'
+      : 'grid grid-cols-2 gap-3.5 sm:gap-4';
+
   return (
-    <div className="grid grid-cols-2 gap-3.5 sm:gap-4" aria-busy="true" aria-label="Ürünler yükleniyor">
+    <div className={gridClass} aria-busy="true" aria-label="Ürünler yükleniyor">
       {Array.from({ length: count }, (_, i) => (
         <div
           key={i}
-          className="animate-stagger-in opacity-0"
+          className="animate-stagger-in opacity-0 min-w-0"
           style={{ animationDelay: `${i * 55}ms` }}
         >
-          <ProductCardSkeleton />
+          <ProductCardSkeleton compact={compact} />
         </div>
       ))}
     </div>

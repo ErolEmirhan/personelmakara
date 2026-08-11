@@ -80,8 +80,26 @@
         window.__makaraMarkBootOk = function () {
           bootOk = true;
         };
-        function showBootError() {
+        function showBootError(event) {
           if (bootOk) return;
+          var message = '';
+          if (event && event.reason) {
+            message = event.reason.message || String(event.reason);
+          } else if (event && event.message) {
+            message = event.message;
+          }
+          var isStaleCache =
+            /Failed to fetch dynamically imported module/i.test(message) ||
+            /Importing a module script failed/i.test(message) ||
+            /Loading chunk/i.test(message) ||
+            /Unexpected token '<'/i.test(message);
+          if (isStaleCache) {
+            var path = window.location.pathname || '/';
+            window.location.replace(
+              path + (path.indexOf('?') >= 0 ? '&' : '?') + 'reset-sw=1'
+            );
+            return;
+          }
           var spinner = document.getElementById('makara-boot-spinner');
           var errorBox = document.getElementById('makara-boot-error');
           if (spinner) spinner.style.display = 'none';

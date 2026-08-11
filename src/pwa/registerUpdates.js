@@ -1,10 +1,12 @@
 import { registerSW } from 'virtual:pwa-register';
+import { redirectToCacheReset } from '../utils/chunkLoadRecovery';
+import { isAppBusy } from '../utils/appBusy';
 import { signalAppUpdating } from './updateSplash';
 
 /** Açık PWA'da yeni deploy'u yakalamak için kontrol aralığı */
 const UPDATE_INTERVAL_MS = 12_000;
-/** Güncelleme splash süresi — reload öncesi */
-const RELOAD_DELAY_MS = 2400;
+/** Meşgul kullanıcı için yeniden deneme aralığı */
+const BUSY_RETRY_MS = 8000;
 
 let reloadScheduled = false;
 let hadServiceWorkerController = false;
@@ -15,11 +17,18 @@ function readLocalBuildVersion() {
 
 function scheduleReload() {
   if (reloadScheduled) return;
-  reloadScheduled = true;
   signalAppUpdating();
-  window.setTimeout(() => {
-    window.location.reload();
-  }, RELOAD_DELAY_MS);
+
+  const attempt = () => {
+    if (isAppBusy()) {
+      window.setTimeout(attempt, BUSY_RETRY_MS);
+      return;
+    }
+    reloadScheduled = true;
+    redirectToCacheReset();
+  };
+
+  attempt();
 }
 
 async function checkRemoteBuildVersion() {

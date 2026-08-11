@@ -260,7 +260,10 @@ export function ExistingOrdersPanel({ items, canCancel, onCancelItem }) {
                       </span>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-gray-600 font-semibold text-xs">
-                          {item.isGift ? '0.00' : (item.price * item.quantity).toFixed(2)} ₺
+                          {item.isGift
+                            ? '0.00'
+                            : ((Number(item.price) || 0) * (Number(item.quantity) || 0)).toFixed(2)}{' '}
+                          ₺
                         </span>
                         {canCancel && onCancelItem && (
                           <button

@@ -18,6 +18,7 @@ import { OrdersScreen } from './OrdersScreen';
 import { NotificationsScreen } from './NotificationsScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
+import { PendingCartModal } from '../components/modals/PendingCartModal';
 import { IncomingPushBanner } from '../components/notifications/IncomingPushBanner';
 import { BranchSurface } from '../components/ui/BranchSurface';
 import { ScreenTransition } from '../components/ui/ScreenTransition';
@@ -28,13 +29,14 @@ import { shouldShowBroadcast } from '../utils/notificationPrefs';
 export function MainScreen() {
   const { theme, branchKey } = useBranch();
   const { staff } = useAuth();
-  const { screen, mainTab, loadData, setMainTab, showToast } = useApp();
+  const { screen, mainTab, loadData, setMainTab, showToast, pendingCartPrompt, dismissPendingCartPrompt } = useApp();
   const [broadcast, setBroadcast] = useState(null);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [incomingPush, setIncomingPush] = useState(null);
 
   useAndroidBackNavigation({ accountOpen: quickActionsOpen, setAccountOpen: setQuickActionsOpen });
   useBackHandler(!!broadcast, () => setBroadcast(null));
+  useBackHandler(!!pendingCartPrompt, dismissPendingCartPrompt);
 
   useEffect(() => {
     if (staff && branchKey) loadData();
@@ -197,6 +199,7 @@ export function MainScreen() {
         date={broadcast?.date}
         time={broadcast?.time}
       />
+      <PendingCartModal />
     </div>
   );
 }

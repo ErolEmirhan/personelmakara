@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { deleteStaffMember } from '../../services/firebaseService';
 
-export function StaffDeleteModal({ open, onClose, member, onDeleted }) {
+export function StaffDeleteModal({ open, onClose, member, branchKey, deletedBy, onDeleted }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
 
@@ -14,7 +14,7 @@ export function StaffDeleteModal({ open, onClose, member, onDeleted }) {
     setDeleting(true);
     setError('');
     try {
-      await deleteStaffMember(member.id);
+      await deleteStaffMember(member.id, { deletedBy, branchKey });
       onDeleted?.(member.id);
       onClose();
     } catch {

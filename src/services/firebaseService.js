@@ -158,16 +158,129 @@ function mapStaffRecord(data, docId) {
   };
 }
 
+const STAFF_DELETIONS = 'staff_deletions';
+
+async function fetchStaffDeletionMap() {
+  const snap = await getDocs(collection(requireMainDb(), STAFF_DELETIONS));
+  const byId = new Set();
+  const byPassword = new Set();
+  snap.forEach((d) => {
+    byId.add(d.id);
+    const data = d.data();
+    if (data?.staffId != null) byId.add(String(data.staffId));
+    if (data?.password) byPassword.add(String(data.password));
+  });
+  return { byId, byPassword };
+}
+
+function isStaffTombstoned(staffId, password, deletionMap) {
+  if (deletionMap.byId.has(String(staffId))) return true;
+  if (password && deletionMap.byPassword.has(String(password))) return true;
+  return false;
+}
+
+async function writeStaffTombstone(staffId, { password, branchKey, deletedBy } = {}) {
+  const db = requireMainDb();
+  const id = String(staffId);
+  const idNum = Number(id);
+  await setDoc(
+    doc(db, STAFF_DELETIONS, id),
+    {
+      staffId: Number.isFinite(idNum) ? idNum : id,
+      password: password ? String(password) : null,
+      branchKey: branchKey || null,
+      deletedAt: new Date().toISOString(),
+      deletedBy: deletedBy ?? null,
+    },
+    { merge: true }
+  );
+}
+
+async function collectStaffDocRefs(staffId) {
+  const db = requireMainDb();
+  const refs = new Map();
+  let password = null;
+  let branchKey = null;
+
+  const primaryRef = doc(db, 'staff', String(staffId));
+  const primarySnap = await getDoc(primaryRef);
+  if (primarySnap.exists()) {
+    refs.set(primarySnap.id, primaryRef);
+    const data = primarySnap.data();
+    password = data?.password ?? null;
+    branchKey = data?.branchKey ?? null;
+  }
+
+  const allSnap = await getDocs(collection(db, 'staff'));
+  allSnap.forEach((d) => {
+    const data = d.data();
+    const matchesId =
+      String(d.id) === String(staffId) ||
+      (data?.id != null && String(data.id) === String(staffId));
+    const matchesPassword = password && String(data?.password) === String(password);
+    if (matchesId || matchesPassword) {
+      refs.set(d.id, d.ref);
+      if (!password && data?.password) password = data.password;
+      if (!branchKey && data?.branchKey) branchKey = data.branchKey;
+    }
+  });
+
+  if (password) {
+    const pwdSnap = await getDocs(
+      query(collection(db, 'staff'), where('password', '==', String(password)))
+    );
+    pwdSnap.forEach((d) => refs.set(d.id, d.ref));
+  }
+
+  return { refs: [...refs.values()], password, branchKey };
+}
+
+async function purgeStaffArtifacts(staffIds) {
+  const db = requireMainDb();
+  const uniqueIds = [...new Set(staffIds.map(String))];
+  await Promise.all(
+    uniqueIds.map(async (id) => {
+      try {
+        await deleteDoc(doc(db, 'staff', id));
+      } catch {
+        /* yoksa sorun değil */
+      }
+      try {
+        await deleteDoc(doc(db, 'staff_presence', id));
+      } catch {
+        /* yoksa sorun değil */
+      }
+      try {
+        await deleteDoc(doc(db, 'staff_push_tokens', id));
+      } catch {
+        /* yoksa sorun değil */
+      }
+    })
+  );
+}
+
 export async function fetchStaffRecord(staffId) {
+  const deletionMap = await fetchStaffDeletionMap();
   const ref = doc(requireMainDb(), 'staff', String(staffId));
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
-  return mapStaffRecord(snap.data(), staffId);
+  const data = snap.data();
+  if (isStaffTombstoned(staffId, data?.password, deletionMap) || data?.deleted === true) {
+    purgeStaffArtifacts([staffId]).catch(() => {});
+    return null;
+  }
+  return mapStaffRecord(data, staffId);
 }
 
 export async function loginStaff(password) {
   const db = requireMainDb();
-  const q = query(collection(db, 'staff'), where('password', '==', password.toString()));
+  const pwd = password.toString();
+  const deletionMap = await fetchStaffDeletionMap();
+  if (deletionMap.byPassword.has(pwd)) {
+    return { success: false, error: 'Bu hesap silinmiş. Yöneticinize başvurun.' };
+  }
+
+  const q = query(collection(db, 'staff'), where('password', '==', pwd));
   const snap = await getDocs(q);
   if (snap.empty) return { success: false, error: 'Şifre hatalı' };
   if (snap.docs.length > 1) {
@@ -178,6 +291,10 @@ export async function loginStaff(password) {
   }
   const docSnap = snap.docs[0];
   const data = docSnap.data();
+  if (isStaffTombstoned(docSnap.id, pwd, deletionMap) || data?.deleted === true) {
+    purgeStaffArtifacts([docSnap.id]).catch(() => {});
+    return { success: false, error: 'Bu hesap silinmiş. Yöneticinize başvurun.' };
+  }
   return {
     success: true,
     staff: mapStaffRecord(data, docSnap.id),
@@ -207,7 +324,6 @@ export async function updateStaffMemberRoles(branchKey, staffId, roles) {
   const db = requireMainDb();
   const id = String(staffId);
   const timestamp = new Date().toISOString();
-  const all = await fetchBranchStaff(branchKey);
 
   let isAdmin = !!roles.is_admin;
   let isBoss = !!roles.is_boss;
@@ -217,32 +333,13 @@ export async function updateStaffMemberRoles(branchKey, staffId, roles) {
   if (isManager) isChef = false;
   if (isChef) isManager = false;
 
-  const writes = [];
-
-  if (isManager) {
-    for (const s of all) {
-      if (String(s.id) !== id && s.is_manager) {
-        writes.push(
-          updateDoc(doc(db, 'staff', String(s.id)), {
-            is_manager: false,
-            updatedAt: timestamp,
-          })
-        );
-      }
-    }
-  }
-
-  writes.push(
-    updateDoc(doc(db, 'staff', id), {
-      is_admin: isAdmin,
-      is_boss: isBoss,
-      is_manager: isManager,
-      is_chef: isChef,
-      updatedAt: timestamp,
-    })
-  );
-
-  await Promise.all(writes);
+  await updateDoc(doc(db, 'staff', id), {
+    is_admin: isAdmin,
+    is_boss: isBoss,
+    is_manager: isManager,
+    is_chef: isChef,
+    updatedAt: timestamp,
+  });
 
   try {
     const presenceRef = doc(db, 'staff_presence', id);
@@ -262,15 +359,16 @@ export async function updateStaffMemberRoles(branchKey, staffId, roles) {
   return { success: true };
 }
 
-export async function deleteStaffMember(staffId) {
-  const db = requireMainDb();
-  const id = String(staffId);
-  await deleteDoc(doc(db, 'staff', id));
-  try {
-    await deleteDoc(doc(db, 'staff_presence', id));
-  } catch {
-    /* presence yoksa sorun değil */
-  }
+export async function deleteStaffMember(staffId, options = {}) {
+  const { deletedBy, branchKey: branchKeyOpt } = options;
+  const { refs, password, branchKey } = await collectStaffDocRefs(staffId);
+  const branch = branchKeyOpt || branchKey || null;
+  const allIds = [...new Set([String(staffId), ...refs.map((r) => r.id)])];
+
+  await Promise.all(
+    allIds.map((id) => writeStaffTombstone(id, { password, branchKey: branch, deletedBy }))
+  );
+  await purgeStaffArtifacts(allIds);
   return { success: true };
 }
 
@@ -817,13 +915,25 @@ export function stopStaffPresence(markOffline = true) {
 }
 
 export async function fetchBranchStaff(branchKey) {
+  const deletionMap = await fetchStaffDeletionMap();
   const snap = await getDocs(collection(requireMainDb(), 'staff'));
   const list = [];
+  const zombieIds = [];
+
   snap.forEach((d) => {
     const s = d.data();
     if (s.branchKey && s.branchKey !== branchKey) return;
+    if (isStaffTombstoned(d.id, s.password, deletionMap) || s.deleted === true) {
+      zombieIds.push(d.id);
+      return;
+    }
     list.push(mapStaffRecord(s, d.id));
   });
+
+  if (zombieIds.length > 0) {
+    purgeStaffArtifacts(zombieIds).catch(() => {});
+  }
+
   return list.sort((a, b) =>
     `${a.name} ${a.surname}`.localeCompare(`${b.name} ${b.surname}`, 'tr')
   );

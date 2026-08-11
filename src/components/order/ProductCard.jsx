@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useBranch } from '../../context/BranchContext';
 
-function PlaceholderArt({ accentSolid }) {
+function PlaceholderArt({ accentSolid, compact = false }) {
   return (
     <div
       className="absolute inset-0 flex items-center justify-center"
@@ -10,7 +10,7 @@ function PlaceholderArt({ accentSolid }) {
       }}
     >
       <svg
-        className="w-14 h-14 opacity-[0.22]"
+        className={compact ? 'w-8 h-8 opacity-[0.22]' : 'w-14 h-14 opacity-[0.22]'}
         viewBox="0 0 24 24"
         fill="none"
         stroke={accentSolid}
@@ -28,7 +28,7 @@ function PlaceholderArt({ accentSolid }) {
   );
 }
 
-export function ProductCard({ product, onAdd }) {
+export function ProductCard({ product, onAdd, compact = false }) {
   const { theme } = useBranch();
   const [justAdded, setJustAdded] = useState(false);
   const outOfStock = product.trackStock && product.stock <= 0;
@@ -48,14 +48,16 @@ export function ProductCard({ product, onAdd }) {
       type="button"
       onClick={handleAdd}
       disabled={outOfStock}
-      className={`group relative flex flex-col w-full rounded-[1.35rem] bg-white overflow-hidden text-left transition-all duration-ui ease-premium border border-slate-100/90 shadow-card disabled:cursor-not-allowed ${
+      className={`group relative flex flex-col w-full min-w-0 bg-white overflow-hidden text-left transition-all duration-ui ease-premium border border-slate-100/90 shadow-card disabled:cursor-not-allowed ${
+        compact ? 'rounded-xl' : 'rounded-[1.35rem]'
+      } ${
         outOfStock
           ? 'opacity-75'
           : 'active:scale-[0.98] hover:shadow-card-hover hover:border-slate-200/90'
       }`}
       aria-label={`${product.name} — ${price} ₺`}
     >
-      <div className="relative w-full aspect-[5/4] overflow-hidden bg-gray-100">
+      <div className={`relative w-full overflow-hidden bg-gray-100 ${compact ? 'aspect-square' : 'aspect-[5/4]'}`}>
         {imageSrc ? (
           <img
             src={imageSrc}
@@ -67,26 +69,32 @@ export function ProductCard({ product, onAdd }) {
             }`}
           />
         ) : (
-          <PlaceholderArt accentSolid={theme.accentSolid} />
+          <PlaceholderArt accentSolid={theme.accentSolid} compact={compact} />
         )}
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/5 to-transparent pointer-events-none" />
 
         {product.trackStock && !outOfStock && (
           <span
-            className={`absolute top-2.5 left-2.5 z-[2] text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-lg backdrop-blur-md border ${
+            className={`absolute z-[2] font-bold uppercase tracking-wide rounded-md backdrop-blur-md border ${
+              compact
+                ? 'top-1 left-1 text-[8px] px-1 py-0.5'
+                : 'top-2.5 left-2.5 text-[10px] px-2 py-1 rounded-lg'
+            } ${
               lowStock
                 ? 'bg-amber-500/90 text-white border-amber-400/50'
                 : 'bg-white/90 text-gray-700 border-white/60'
             }`}
           >
-            Stok {product.stock}
+            {compact ? product.stock : `Stok ${product.stock}`}
           </span>
         )}
 
         {outOfStock && (
           <div className="absolute inset-0 z-[3] flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px]">
-            <span className="px-3 py-1.5 rounded-full bg-white/95 text-gray-800 text-xs font-bold tracking-wide shadow-lg">
+            <span className={`rounded-full bg-white/95 text-gray-800 font-bold tracking-wide shadow-lg ${
+              compact ? 'px-2 py-1 text-[10px]' : 'px-3 py-1.5 text-xs'
+            }`}>
               Tükendi
             </span>
           </div>
@@ -94,35 +102,40 @@ export function ProductCard({ product, onAdd }) {
 
         {!outOfStock && (
           <span
-            className={`absolute bottom-2.5 right-2.5 z-[2] w-9 h-9 rounded-full bg-gradient-to-br ${theme.accent} text-white shadow-lg shadow-black/20 flex items-center justify-center ring-2 ring-white/90 transition-transform duration-ui ease-premium group-active:scale-90 ${
-              justAdded ? 'animate-add-pulse' : ''
-            }`}
+            className={`absolute z-[2] rounded-full bg-gradient-to-br ${theme.accent} text-white shadow-lg shadow-black/20 flex items-center justify-center ring-2 ring-white/90 transition-transform duration-ui ease-premium group-active:scale-90 ${
+              compact ? 'bottom-1.5 right-1.5 w-7 h-7' : 'bottom-2.5 right-2.5 w-9 h-9'
+            } ${justAdded ? 'animate-add-pulse' : ''}`}
             aria-hidden
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <svg className={compact ? 'w-4 h-4' : 'w-5 h-5'} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
           </span>
         )}
       </div>
 
-      <div className="flex flex-col flex-1 px-3 pt-3 pb-3.5 gap-1.5">
-        <h3 className="font-semibold text-[13px] leading-snug text-gray-900 line-clamp-2 min-h-[2.35rem]">
+      <div className={`flex flex-col flex-1 min-w-0 ${compact ? 'px-1.5 pt-1.5 pb-2 gap-0.5' : 'px-3 pt-3 pb-3.5 gap-1.5'}`}>
+        <h3 className={`font-semibold text-gray-900 line-clamp-2 ${
+          compact ? 'text-[10px] leading-tight min-h-[1.65rem]' : 'text-[13px] leading-snug min-h-[2.35rem]'
+        }`}>
           {product.name}
         </h3>
 
-        <div className="flex items-end justify-between gap-2 mt-auto">
+        <div className={`flex items-end justify-between gap-1 mt-auto ${compact ? '' : 'gap-2'}`}>
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Fiyat</p>
-            <p className="text-lg font-display font-bold leading-none tabular-nums">
+            {!compact && (
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Fiyat</p>
+            )}
+            <p className={`font-display font-bold leading-none tabular-nums ${compact ? 'text-[12px]' : 'text-lg'}`}>
               <span className={`bg-gradient-to-r ${theme.accent} bg-clip-text text-transparent`}>
                 {price}
               </span>
-              <span className="text-sm font-semibold text-gray-500 ml-0.5">₺</span>
+              {!compact && <span className="text-sm font-semibold text-gray-500 ml-0.5">₺</span>}
+              {compact && <span className="text-[10px] font-semibold text-gray-500">₺</span>}
             </p>
           </div>
 
-          {!outOfStock && (
+          {!outOfStock && !compact && (
             <span className="shrink-0 text-[10px] font-bold text-gray-400 uppercase tracking-wide opacity-0 group-hover:opacity-100 transition-opacity hidden sm:block">
               Ekle
             </span>
