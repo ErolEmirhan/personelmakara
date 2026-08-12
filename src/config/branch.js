@@ -73,26 +73,26 @@ export const SULTAN_TABLE_SECTIONS = [
 
 export function hasManagerPermission(staff, branchKey) {
   if (!staff) return false;
-  if (staff.is_admin) return true;
+  if (staff.is_admin || staff.is_boss) return true;
   if (branchKey === 'sultansomati') return true;
-  return !!staff.is_manager;
+  // Şef = müdür ile aynı operasyon yetkisi
+  return !!(staff.is_manager || staff.is_chef);
 }
 
 export function canCancelOrderItem(staff, branchKey) {
   if (!staff) return false;
   if (branchKey === 'sultansomati') return true;
   if (staff.is_admin || staff.is_boss) return true;
-  if (staff.is_manager) return true;
-  if (branchKey === 'makara' && staff.is_chef) return true;
+  if (staff.is_manager || staff.is_chef) return true;
   return false;
 }
 
 export function canBulkCancelOrderItems(staff) {
-  return !!staff?.is_manager;
+  return !!(staff?.is_manager || staff?.is_chef || staff?.is_admin || staff?.is_boss);
 }
 
 export function canTransferProductItems(staff) {
-  return !!staff?.is_manager;
+  return !!(staff?.is_manager || staff?.is_chef || staff?.is_admin || staff?.is_boss);
 }
 
 export function canTransferTable(staff) {

@@ -102,7 +102,7 @@ export function QuickActionsBottomSheet({ open, onClose }) {
 
   const openProductTransfer = () => {
     if (!canTransferProducts) {
-      showToast('error', 'Yetki gerekli', 'Ürün aktarmak için müdür yetkisi gerekir');
+      showToast('error', 'Yetki gerekli', 'Ürün aktarmak için müdür veya şef yetkisi gerekir');
       return;
     }
     onClose();
@@ -111,7 +111,7 @@ export function QuickActionsBottomSheet({ open, onClose }) {
 
   const openMerge = () => {
     if (!canMerge) {
-      showToast('error', 'Yetki gerekli', 'Masa birleştirmek için müdür yetkisi gerekir');
+      showToast('error', 'Yetki gerekli', 'Masa birleştirmek için müdür veya şef yetkisi gerekir');
       return;
     }
     onClose();

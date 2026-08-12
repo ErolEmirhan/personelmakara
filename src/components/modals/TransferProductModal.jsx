@@ -178,7 +178,8 @@ export function TransferProductModal({ open, onClose }) {
         })),
         staffId: staff.id,
         staffName: `${staff.name} ${staff.surname}`,
-        staffIsManager: !!staff.is_manager,
+        staffIsManager: !!(staff.is_manager || staff.is_chef),
+        staffIsChef: !!staff.is_chef,
         staffIsAdmin: !!staff.is_admin,
         staffIsBoss: !!staff.is_boss,
       });

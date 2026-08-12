@@ -530,7 +530,10 @@ export async function updateProductRecord(productId, fields = {}) {
     patch.price = price;
   }
   if (fields.content != null) {
-    patch.content = String(fields.content).trim();
+    const content = String(fields.content).trim();
+    patch.content = content;
+    // Masaüstü POS `description` alanını da okuyor
+    patch.description = content;
   }
   if (fields.calories != null) {
     patch.calories = String(fields.calories).trim();
@@ -541,7 +544,18 @@ export async function updateProductRecord(productId, fields = {}) {
     patch.image = imageValue;
   }
 
-  await updateDoc(ref, patch);
+  try {
+    await updateDoc(ref, patch);
+  } catch (err) {
+    const code = err?.code || '';
+    const msg = String(err?.message || '');
+    if (code === 'permission-denied' || msg.includes('permission')) {
+      throw new Error(
+        'Firestore yazma izni yok (rules). Console → makara-16344 / ilgili şube → Firestore Rules içinde products için write açık olmalı.'
+      );
+    }
+    throw err;
+  }
   return { success: true };
 }
 
@@ -589,18 +603,26 @@ export async function seedAllProductDetailsFromFirestore(options = {}) {
     const existingCalories = (data.calories || '').trim();
     const isLegacy = isLegacyGenericContent(existingContent);
 
-    if (!force && existingContent && existingCalories && !isLegacy) {
+    // force=false: yalnızca eksik alanları doldur; elle girilen kalori/içeriği ASLA ezme
+    const needContent = force || !existingContent || isLegacy;
+    const needCalories = force || !existingCalories;
+
+    if (!needContent && !needCalories) {
       skipped += 1;
       continue;
     }
 
     const profile = buildProductDetailProfile(name, categoryName);
-    batch.update(docSnap.ref, {
-      content: profile.content,
-      description: profile.content,
-      calories: profile.calories,
-      updatedAt: timestamp,
-    });
+    const patch = { updatedAt: timestamp };
+    if (needContent) {
+      patch.content = profile.content;
+      patch.description = profile.content;
+    }
+    if (needCalories) {
+      patch.calories = profile.calories;
+    }
+
+    batch.update(docSnap.ref, patch);
     batchCount += 1;
     updated += 1;
 

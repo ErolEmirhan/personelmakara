@@ -188,7 +188,7 @@ export function StaffAssignModal({ open, onClose, member, branchKey, accent, onS
         {showChef && (
           <RoleToggle
             label="Şef"
-            description="Mevcut sipariş iptali yetkisi (Makara)"
+            description="Müdür ile aynı yetkiler — ürün yönetimi, iptal, birleştirme, duyuru"
             checked={isChef}
             onChange={(val) => {
               setIsChef(val);
