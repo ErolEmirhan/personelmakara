@@ -7,11 +7,16 @@ import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { useBackHandler } from '../../hooks/useBackButton';
 import { seedAllProductDetailsFromFirestore, updateProductRecord } from '../../services/firebaseService';
+import { clearCatalogCache } from '../../services/catalogCache';
 import { clearProductImageCache, normalizeProductImage } from '../../services/productImageCache';
 import { prepareSupportImageDataUrl, validateSupportImageDataUrl } from '../../services/staffProfileImage';
 import { isBestSellersCategory } from '../../utils/bestSellers';
 import { productNeedsDetailRefresh } from '../../utils/productDetailDefaults';
 import { hapticLight } from '../../utils/haptic';
+
+function productMeta(product) {
+  return product?.firestoreDocId ? { firestoreDocId: product.firestoreDocId } : {};
+}
 
 const SHEET_Z = 'z-[9200]';
 
@@ -265,7 +270,10 @@ export function ProductManagementPanel({ open, onClose }) {
   }, [open]);
 
   const refreshCatalog = useCallback(async () => {
-    if (branchKey) await clearProductImageCache(branchKey);
+    if (branchKey) {
+      await clearProductImageCache(branchKey);
+      await clearCatalogCache(branchKey);
+    }
     await loadData({ force: true });
   }, [branchKey, loadData]);
 
@@ -298,6 +306,7 @@ export function ProductManagementPanel({ open, onClose }) {
   useEffect(() => {
     if (!open || seedStartedRef.current || !(products || []).length) return undefined;
     if (!(products || []).some(productNeedsDetailRefresh)) return undefined;
+    if ((products || []).some((p) => p.detailsEditedManually)) return undefined;
 
     seedStartedRef.current = true;
     let cancelled = false;
@@ -333,7 +342,9 @@ export function ProductManagementPanel({ open, onClose }) {
   const handleSaveBasics = async (productId, name, price) => {
     setSavingId(productId);
     try {
-      await updateProductRecord(productId, { name, price: Number(price) });
+      await updateProductRecord(productId, { name, price: Number(price) }, productMeta(
+        (products || []).find((p) => p.id === productId)
+      ));
       await refreshCatalog();
       showToast('success', 'Kaydedildi', 'Ürün bilgileri güncellendi');
       hapticLight();
@@ -347,8 +358,9 @@ export function ProductManagementPanel({ open, onClose }) {
   const handleSaveContent = async (text) => {
     if (!contentTarget) return;
     try {
-      await updateProductRecord(contentTarget.id, { content: text });
+      await updateProductRecord(contentTarget.id, { content: text }, productMeta(contentTarget));
       await refreshCatalog();
+      setContentTarget((prev) => (prev ? { ...prev, content: text.trim() } : null));
       showToast('success', 'İçerik', 'Ürün içeriği kaydedildi');
     } catch (err) {
       showToast('error', 'Hata', err?.message || 'Kaydedilemedi');
@@ -359,8 +371,9 @@ export function ProductManagementPanel({ open, onClose }) {
   const handleSaveCalories = async (text) => {
     if (!calorieTarget) return;
     try {
-      await updateProductRecord(calorieTarget.id, { calories: text });
+      await updateProductRecord(calorieTarget.id, { calories: text }, productMeta(calorieTarget));
       await refreshCatalog();
+      setCalorieTarget((prev) => (prev ? { ...prev, calories: text.trim() } : null));
       showToast('success', 'Kalori', 'Kalori bilgisi kaydedildi');
     } catch (err) {
       showToast('error', 'Hata', err?.message || 'Kaydedilemedi');
@@ -386,7 +399,7 @@ export function ProductManagementPanel({ open, onClose }) {
     setCropImageSrc(null);
     try {
       validateSupportImageDataUrl(dataUrl);
-      await updateProductRecord(imageTarget.id, { image_base64: dataUrl });
+      await updateProductRecord(imageTarget.id, { image_base64: dataUrl }, productMeta(imageTarget));
       await refreshCatalog();
       showToast('success', 'Görsel', 'Ürün görseli kaydedildi');
     } catch (err) {

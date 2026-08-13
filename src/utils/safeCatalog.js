@@ -32,7 +32,12 @@ export function sanitizeProduct(raw) {
     stock: Number(raw.stock) || 0,
     trackStock: !!(raw.trackStock || raw.track_stock),
     content: String(raw.content || raw.description || raw.ingredients || '').trim(),
-    calories: raw.calories != null && raw.calories !== '' ? String(raw.calories).trim() : '',
+    calories: raw.calories != null && raw.calories !== '' ? String(raw.calories).trim() : (
+      raw.calorie != null && raw.calorie !== '' ? String(raw.calorie).trim() : (
+        raw.calorie_info != null && raw.calorie_info !== '' ? String(raw.calorie_info).trim() : ''
+      )
+    ),
+    detailsEditedManually: !!raw.detailsEditedManually,
     imageSrc: raw.imageSrc || null,
   };
 }

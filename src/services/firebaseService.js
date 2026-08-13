@@ -465,7 +465,12 @@ function mapProductDocs(docs, categoryId) {
       category_id: typeof p.category_id === 'string' ? parseInt(p.category_id, 10) : p.category_id,
       imageRaw: extractProductImageRaw(p),
       content: p.content || p.description || p.ingredients || '',
-      calories: p.calories != null && p.calories !== '' ? String(p.calories) : '',
+      calories: p.calories != null && p.calories !== '' ? String(p.calories) : (
+        p.calorie != null && p.calorie !== '' ? String(p.calorie) : (
+          p.calorie_info != null && p.calorie_info !== '' ? String(p.calorie_info) : ''
+        )
+      ),
+      detailsEditedManually: !!p.detailsEditedManually,
       stock: p.stock,
       trackStock: p.trackStock || p.track_stock || false,
     });
@@ -495,13 +500,15 @@ export async function fetchProducts(categoryId) {
   return mapProductDocs(snap.docs, categoryId);
 }
 
-async function resolveProductDocRef(productId) {
+async function resolveProductDocRef(productId, firestoreDocId) {
   const db = requireMainDb();
   const idStr = String(productId);
 
-  const directRef = doc(db, 'products', idStr);
-  const directSnap = await getDoc(directRef);
-  if (directSnap.exists()) return directRef;
+  if (firestoreDocId) {
+    const byDocId = doc(db, 'products', String(firestoreDocId));
+    const byDocSnap = await getDoc(byDocId);
+    if (byDocSnap.exists()) return byDocId;
+  }
 
   const snap = await getDocs(collection(db, 'products'));
   for (const d of snap.docs) {
@@ -509,15 +516,21 @@ async function resolveProductDocRef(productId) {
     const pid = resolveProductId(d, data);
     if (String(pid) === idStr) return d.ref;
   }
+
+  const directRef = doc(db, 'products', idStr);
+  const directSnap = await getDoc(directRef);
+  if (directSnap.exists()) return directRef;
+
   return null;
 }
 
 /** Müdür paneli — ürün adı, fiyat, içerik, kalori, görsel güncelleme */
-export async function updateProductRecord(productId, fields = {}) {
-  const ref = await resolveProductDocRef(productId);
+export async function updateProductRecord(productId, fields = {}, meta = {}) {
+  const ref = await resolveProductDocRef(productId, meta.firestoreDocId);
   if (!ref) throw new Error('Ürün bulunamadı');
 
-  const patch = { updatedAt: new Date().toISOString() };
+  const timestamp = new Date().toISOString();
+  const patch = { updatedAt: timestamp };
 
   if (fields.name != null) {
     const name = String(fields.name).trim();
@@ -530,18 +543,28 @@ export async function updateProductRecord(productId, fields = {}) {
     patch.price = price;
   }
   if (fields.content != null) {
-    const content = String(fields.content).trim();
-    patch.content = content;
+    const text = String(fields.content).trim();
+    patch.content = text;
     // Masaüstü POS `description` alanını da okuyor
-    patch.description = content;
+    patch.description = text;
+    patch.ingredients = text;
+    patch.detailsEditedManually = true;
+    patch.pwaDetailsUpdatedAt = timestamp;
   }
   if (fields.calories != null) {
-    patch.calories = String(fields.calories).trim();
+    const text = String(fields.calories).trim();
+    patch.calories = text;
+    patch.calorie = text;
+    patch.calorie_info = text;
+    patch.detailsEditedManually = true;
+    patch.pwaDetailsUpdatedAt = timestamp;
   }
   if (fields.image_base64 !== undefined) {
     const imageValue = fields.image_base64;
     patch.image_base64 = imageValue;
     patch.image = imageValue;
+    patch.detailsEditedManually = true;
+    patch.pwaDetailsUpdatedAt = timestamp;
   }
 
   try {
@@ -556,7 +579,26 @@ export async function updateProductRecord(productId, fields = {}) {
     }
     throw err;
   }
-  return { success: true };
+
+  const verifySnap = await getDoc(ref);
+  if (!verifySnap.exists()) throw new Error('Kayıt doğrulanamadı');
+
+  if (fields.content != null) {
+    const saved = (verifySnap.data().content || verifySnap.data().description || '').trim();
+    const expected = String(fields.content).trim();
+    if (saved !== expected) {
+      throw new Error('İçerik kaydedildi ancak sunucudan okunamadı — masaüstü senkronu kontrol edin');
+    }
+  }
+  if (fields.calories != null) {
+    const saved = String(verifySnap.data().calories || verifySnap.data().calorie || '').trim();
+    const expected = String(fields.calories).trim();
+    if (saved !== expected) {
+      throw new Error('Kalori kaydedildi ancak sunucudan okunamadı — masaüstü senkronu kontrol edin');
+    }
+  }
+
+  return { success: true, firestoreDocId: ref.id };
 }
 
 /** Tüm ürünlere ürün adına göre profesyonel içerik/kalori yazar */
@@ -599,9 +641,15 @@ export async function seedAllProductDetailsFromFirestore(options = {}) {
       categoryMap.get(docSnap.id) ||
       'Menü';
 
-    const existingContent = (data.content || data.description || '').trim();
-    const existingCalories = (data.calories || '').trim();
+    const existingContent = (data.content || data.description || data.ingredients || '').trim();
+    const existingCalories = String(data.calories || data.calorie || data.calorie_info || '').trim();
     const isLegacy = isLegacyGenericContent(existingContent);
+    const manuallyEdited = !!data.detailsEditedManually;
+
+    if (!force && manuallyEdited) {
+      skipped += 1;
+      continue;
+    }
 
     // force=false: yalnızca eksik alanları doldur; elle girilen kalori/içeriği ASLA ezme
     const needContent = force || !existingContent || isLegacy;
@@ -613,16 +661,19 @@ export async function seedAllProductDetailsFromFirestore(options = {}) {
     }
 
     const profile = buildProductDetailProfile(name, categoryName);
-    const patch = { updatedAt: timestamp };
+    const seedPatch = { updatedAt: timestamp };
     if (needContent) {
-      patch.content = profile.content;
-      patch.description = profile.content;
+      seedPatch.content = profile.content;
+      seedPatch.description = profile.content;
+      seedPatch.ingredients = profile.content;
     }
     if (needCalories) {
-      patch.calories = profile.calories;
+      seedPatch.calories = profile.calories;
+      seedPatch.calorie = profile.calories;
+      seedPatch.calorie_info = profile.calories;
     }
 
-    batch.update(docSnap.ref, patch);
+    batch.update(docSnap.ref, seedPatch);
     batchCount += 1;
     updated += 1;
 
