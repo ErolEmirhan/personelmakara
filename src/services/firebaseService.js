@@ -1047,6 +1047,73 @@ export async function submitAndWaitMobileAction(action, timeoutMs = 45000) {
 // ── Garson çağrıları (QR menü → tablecalls) ─────────────────────────────────
 
 const TABLE_CALLS_COLLECTION = 'tablecalls';
+const TABLE_CALL_PUSH_LOG = 'table_call_push_log';
+const TABLE_CALL_RECENT_MS = 15 * 60 * 1000;
+
+function isPendingTableCall(data = {}) {
+  const status = String(data.status ?? data.state ?? 'pending').trim().toLowerCase();
+  return status === 'pending' || status === 'waiting' || status === 'new';
+}
+
+function tableCallCreatedMs(data = {}) {
+  const ts = data.createdAt ?? data.created_at ?? data.timestamp ?? data.created ?? null;
+  if (!ts) return null;
+  if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+  if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+  if (typeof ts === 'number') return ts;
+  const parsed = Date.parse(ts);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isRecentTableCall(data = {}) {
+  const createdMs = tableCallCreatedMs(data);
+  if (createdMs == null) return true;
+  return Date.now() - createdMs <= TABLE_CALL_RECENT_MS;
+}
+
+function attachTableCallsListener(db, source, seen, onNewCall) {
+  let initialized = false;
+
+  const emit = (docSnap) => {
+    const data = docSnap.data() || {};
+    if (!isPendingTableCall(data)) return;
+    if (data.pwaPushSentAt) return;
+
+    const dedupeKey = `${source}:${docSnap.id}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+
+    onNewCall({
+      id: docSnap.id,
+      source,
+      ...data,
+      tableNumber: resolveTableCallNumber(data),
+    });
+  };
+
+  return onSnapshot(
+    collection(db, TABLE_CALLS_COLLECTION),
+    (snap) => {
+      if (!initialized) {
+        initialized = true;
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() || {};
+          if (!isRecentTableCall(data)) return;
+          emit(docSnap);
+        });
+        return;
+      }
+
+      snap.docChanges().forEach((change) => {
+        if (change.type !== 'added' && change.type !== 'modified') return;
+        emit(change.doc);
+      });
+    },
+    (err) => {
+      console.error(`[table-call] ${source} dinleyici hatası:`, err?.code || err?.message || err);
+    }
+  );
+}
 
 export function resolveTableCallNumber(data = {}) {
   const raw =
@@ -1060,64 +1127,84 @@ export function resolveTableCallNumber(data = {}) {
   return String(raw).trim();
 }
 
-/** Yeni pending garson çağrılarını dinler (ilk yükleme atlanır). */
+/** Yeni pending garson çağrılarını dinler (masalar + ana DB). */
 export function subscribeTableCalls(onNewCall) {
-  if (!isFirebaseReady()) return () => {};
+  if (!isFirebaseReady()) {
+    console.warn('[table-call] Firebase hazır değil, dinleyici başlatılamadı');
+    return () => {};
+  }
 
   if (tableCallsUnsub) {
     try { tableCallsUnsub(); } catch { /* */ }
   }
 
-  const db = requireTablesDb();
-  const q = query(collection(db, TABLE_CALLS_COLLECTION), where('status', '==', 'pending'));
-  let initialized = false;
+  const seen = new Set();
+  const unsubs = [];
 
-  tableCallsUnsub = onSnapshot(
-    q,
-    (snap) => {
-      if (!initialized) {
-        initialized = true;
-        return;
-      }
-      snap.docChanges().forEach((change) => {
-        if (change.type !== 'added') return;
-        const data = change.doc.data() || {};
-        if (data.status !== 'pending') return;
-        onNewCall({
-          id: change.doc.id,
-          ...data,
-          tableNumber: resolveTableCallNumber(data),
-        });
-      });
-    },
-    (err) => {
-      console.error('tablecalls snapshot error:', err);
-    }
-  );
+  try {
+    unsubs.push(attachTableCallsListener(requireTablesDb(), 'tables', seen, onNewCall));
+  } catch (err) {
+    console.error('[table-call] masalar DB dinleyicisi kurulamadı:', err);
+  }
 
-  return () => {
-    if (tableCallsUnsub) {
-      try { tableCallsUnsub(); } catch { /* */ }
-      tableCallsUnsub = null;
+  try {
+    const mainDb = requireMainDb();
+    const tablesDb = requireTablesDb();
+    if (mainDb !== tablesDb) {
+      unsubs.push(attachTableCallsListener(mainDb, 'main', seen, onNewCall));
     }
+  } catch (err) {
+    console.error('[table-call] ana DB dinleyicisi kurulamadı:', err);
+  }
+
+  if (!unsubs.length) {
+    console.warn('[table-call] Hiçbir Firestore dinleyicisi başlatılamadı');
+    return () => {};
+  }
+
+  console.info('[table-call] Dinleyici aktif (%d kaynak)', unsubs.length);
+
+  tableCallsUnsub = () => {
+    unsubs.forEach((unsub) => {
+      try { unsub(); } catch { /* */ }
+    });
+    tableCallsUnsub = null;
   };
+
+  return tableCallsUnsub;
 }
 
-/** Aynı çağrı için yalnızca bir cihaz push gönderir. */
+/** Aynı çağrı için yalnızca bir cihaz push gönderir (ana DB log). */
 export async function claimTableCallPushNotification(callId) {
   if (!callId || !isFirebaseReady()) return false;
-  const db = requireTablesDb();
-  const ref = doc(db, TABLE_CALLS_COLLECTION, callId);
+  const db = requireMainDb();
+  const ref = doc(db, TABLE_CALL_PUSH_LOG, String(callId));
 
-  return runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) return false;
-    const data = snap.data() || {};
-    if (data.status !== 'pending') return false;
-    if (data.pwaPushSentAt) return false;
-    tx.update(ref, { pwaPushSentAt: serverTimestamp() });
-    return true;
-  });
+  try {
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;
+      tx.set(ref, {
+        callId: String(callId),
+        sentAt: serverTimestamp(),
+        source: 'pwa_relay',
+      });
+      return true;
+    });
+  } catch (err) {
+    console.error('[table-call] push claim hatası:', err?.code || err?.message || err);
+    return false;
+  }
+}
+
+export async function wasTableCallPushSent(callId) {
+  if (!callId || !isFirebaseReady()) return false;
+  try {
+    const snap = await getDoc(doc(requireMainDb(), TABLE_CALL_PUSH_LOG, String(callId)));
+    return snap.exists();
+  } catch {
+    return false;
+  }
 }
 
 export function cleanupFirebase() {

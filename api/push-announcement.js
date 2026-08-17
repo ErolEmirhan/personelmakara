@@ -72,7 +72,7 @@ export default async function handler(req, res) {
 
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
       const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
-      const response = await messaging.sendEachForMulticast({
+      const payload = {
         tokens: chunk,
         data: {
           type: pushType,
@@ -93,7 +93,16 @@ export default async function handler(req, res) {
             link: openUrl,
           },
         },
-      });
+      };
+
+      if (pushType === 'table_call') {
+        payload.notification = {
+          title: notificationTitle,
+          body: notificationBody,
+        };
+      }
+
+      const response = await messaging.sendEachForMulticast(payload);
 
       sent += response.successCount;
       failed += response.failureCount;

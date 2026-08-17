@@ -7,7 +7,6 @@ import {
   isPushConfiguredForBranch,
   requestPushOnAppEntry,
 } from '../services/pushNotifications';
-import { startTableCallPushRelay } from '../services/tableCallPushRelay';
 import { hapticLight } from '../utils/haptic';
 import { AppHeader } from '../components/layout/AppHeader';
 import { BottomNav } from '../components/layout/BottomNav';
@@ -49,11 +48,6 @@ export function MainScreen() {
     startStaffPresence(staff, branchKey);
     return () => stopStaffPresence(true);
   }, [staff, branchKey]);
-
-  useEffect(() => {
-    if (!staff?.id || !branchKey) return undefined;
-    return startTableCallPushRelay(branchKey);
-  }, [staff?.id, branchKey]);
 
   useEffect(() => {
     if (!staff?.id || !branchKey || !isPushConfiguredForBranch(branchKey)) return undefined;
