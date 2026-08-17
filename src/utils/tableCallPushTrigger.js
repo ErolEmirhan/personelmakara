@@ -1,9 +1,6 @@
 /**
- * QR menü / staff-app — addDoc('tablecalls') sonrası çağır.
- * Ekip mesajı (sendAnnouncementPush) ile birebir aynı mantık:
- * client token okur → /api/push-announcement → FCM
- *
- * PWA kapalı olsa bile push gider.
+ * QR menü — addDoc('tablecalls') HEMEN SONRASI ekle.
+ * Ekip mesajı (sendAnnouncementPush) ile aynı API çağrısı.
  */
 export async function sendTableCallPushFromQrMenu({
   db,
@@ -39,9 +36,7 @@ export async function sendTableCallPushFromQrMenu({
       title,
       message,
       tokens: [...tokens],
-      pushType: 'table_call',
-      callId,
-      tableNumber: String(tableNumber),
+      announcementId: callId ? `tablecall-${callId}` : undefined,
     }),
   });
 

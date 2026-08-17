@@ -496,38 +496,16 @@ export async function notifySupportResolvedPush({
   return data;
 }
 
-/** Ekip mesajı ile aynı yol — QR menü addDoc sonrası çağırır, PWA kapalıyken de push gider. */
+/** Ekip mesajı ile birebir aynı push yolu. */
 export async function sendTableCallPush({ branchKey, tableNumber, callId }) {
-  if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
+  const label = tableNumber != null && String(tableNumber).trim() !== ''
+    ? String(tableNumber).trim()
+    : '?';
 
-  const tokens = await fetchBranchPushTokens(branchKey);
-  if (!tokens.length) return { sent: 0 };
-
-  const title = 'Garson çağrısı';
-  const message = `MASA ${tableNumber} Garson Çağırıyor`;
-
-  const res = await fetch(apiUrl('api/push-announcement'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      branchKey,
-      title,
-      message,
-      tokens,
-      pushType: 'table_call',
-      callId,
-      tableNumber: tableNumber != null ? String(tableNumber) : '',
-    }),
+  return sendAnnouncementPush({
+    branchKey,
+    title: 'Garson çağrısı',
+    message: `MASA ${label} Garson Çağırıyor`,
+    announcementId: callId ? `tablecall-${callId}` : undefined,
   });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || 'Push API hatası');
-  }
-
-  if (data.invalidTokens?.length) {
-    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
-  }
-
-  return data;
 }

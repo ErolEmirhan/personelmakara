@@ -95,13 +95,6 @@ export default async function handler(req, res) {
         },
       };
 
-      if (pushType === 'table_call') {
-        payload.notification = {
-          title: notificationTitle,
-          body: notificationBody,
-        };
-      }
-
       const response = await messaging.sendEachForMulticast(payload);
 
       sent += response.successCount;

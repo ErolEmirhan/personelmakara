@@ -25,6 +25,7 @@ import {
 } from '../utils/announcementUnread';
 import { sanitizeCatalog } from '../utils/safeCatalog';
 import { registerAppBusyChecker } from '../utils/appBusy';
+import { startTableCallPushRelay } from '../services/tableCallPushRelay';
 
 import { ToastOverlay } from '../components/ui/Toast';
 
@@ -189,6 +190,11 @@ export function AppProvider({ children }) {
       tablesUnsubRef.current = null;
       unsubBroadcasts();
     };
+  }, [configured, branchKey]);
+
+  useEffect(() => {
+    if (!configured || !branchKey) return undefined;
+    return startTableCallPushRelay(branchKey);
   }, [configured, branchKey]);
 
   useEffect(() => {
