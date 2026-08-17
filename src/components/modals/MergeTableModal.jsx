@@ -3,7 +3,7 @@ import { submitAndWaitMobileAction } from '../../services/firebaseService';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { TablePickerGrid } from '../tables/TablePickerGrid';
-import { TableOpsModalShell, TableSummaryCard, StepIndicator } from './TableOpsModalShell';
+import { buildStaffActionMeta } from '../../utils/staffRole';
 
 export function MergeTableModal({ open, onClose }) {
   const { tables, loadData, showToast } = useApp();
@@ -46,10 +46,7 @@ export function MergeTableModal({ open, onClose }) {
         targetTableId: String(targetId),
         staffId: staff.id,
         staffName: `${staff.name} ${staff.surname}`,
-        staffIsManager: !!(staff.is_manager || staff.is_chef),
-        staffIsChef: !!staff.is_chef,
-        staffIsAdmin: !!staff.is_admin,
-        staffIsBoss: !!staff.is_boss,
+        ...buildStaffActionMeta(staff),
       });
       if (res.success) {
         showToast('success', 'Başarılı', 'Masalar birleştirildi');

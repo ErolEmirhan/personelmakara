@@ -167,7 +167,7 @@ export function QuickActionsBottomSheet({ open, onClose }) {
             description={
               canTransferProducts
                 ? 'Bir masadan seçili ürünleri başka masaya taşıyın'
-                : 'Müdür yetkisi gerekir'
+                : 'Müdür veya şef yetkisi gerekir'
             }
             locked={!canTransferProducts}
             iconStyle={{
@@ -187,7 +187,7 @@ export function QuickActionsBottomSheet({ open, onClose }) {
             description={
               canMerge
                 ? 'İki masanın siparişlerini tek masada toplayın'
-                : 'Müdür yetkisi gerekir'
+                : 'Müdür veya şef yetkisi gerekir'
             }
             locked={!canMerge}
             iconStyle={{
