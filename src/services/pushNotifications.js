@@ -507,6 +507,12 @@ export function notifyTableCallLocally({ tableNumber, callId, message }) {
       detail: { title, body, callId, tableNumber },
     })
   );
+
+  showLocalNotification(title, body, {
+    type: 'table_call',
+    callId: callId || '',
+    tableNumber: tableNumber != null ? String(tableNumber) : '',
+  });
 }
 
 export async function notifyTableCallPush({
@@ -514,15 +520,10 @@ export async function notifyTableCallPush({
   tableNumber,
   callId,
   message,
-  excludeStaffId = null,
 }) {
   if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
 
-  let tokens = await fetchBranchPushTokens(branchKey);
-  if (excludeStaffId != null) {
-    const ownTokens = new Set(await fetchStaffPushTokens(excludeStaffId));
-    tokens = tokens.filter((t) => !ownTokens.has(t));
-  }
+  const tokens = await fetchBranchPushTokens(branchKey);
   if (!tokens.length) return { sent: 0 };
 
   const title = 'Garson çağrısı';

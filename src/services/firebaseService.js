@@ -1079,6 +1079,7 @@ function attachTableCallsListener(db, onNewCall) {
     (snap) => {
       if (!initialized) {
         initialized = true;
+        snap.docs.forEach((docSnap) => seen.add(docSnap.id));
         return;
       }
 
@@ -1143,17 +1144,34 @@ export async function claimTableCallPushNotification(callId) {
   try {
     return await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
-      if (snap.exists()) return false;
+      if (snap.exists() && snap.data()?.sent === true) return false;
+      if (snap.exists() && snap.data()?.claiming === true) return false;
       tx.set(ref, {
         callId: String(callId),
-        sentAt: serverTimestamp(),
+        claiming: true,
+        claimedAt: serverTimestamp(),
         source: 'pwa_relay',
-      });
+      }, { merge: true });
       return true;
     });
   } catch (err) {
-    console.error('[table-call] push claim hatası:', err?.code || err?.message || err);
+    console.warn('[table-call] push claim hatası (fallback denenecek):', err?.code || err?.message || err);
     return false;
+  }
+}
+
+export async function markTableCallPushSent(callId, meta = {}) {
+  if (!callId || !isFirebaseReady()) return;
+  try {
+    await setDoc(doc(requireMainDb(), TABLE_CALL_PUSH_LOG, String(callId)), {
+      callId: String(callId),
+      sent: true,
+      sentAt: serverTimestamp(),
+      source: 'pwa_relay',
+      ...meta,
+    }, { merge: true });
+  } catch (err) {
+    console.warn('[table-call] push log yazılamadı:', err?.code || err?.message || err);
   }
 }
 
@@ -1161,7 +1179,7 @@ export async function wasTableCallPushSent(callId) {
   if (!callId || !isFirebaseReady()) return false;
   try {
     const snap = await getDoc(doc(requireMainDb(), TABLE_CALL_PUSH_LOG, String(callId)));
-    return snap.exists();
+    return snap.exists() && snap.data()?.sent === true;
   } catch {
     return false;
   }

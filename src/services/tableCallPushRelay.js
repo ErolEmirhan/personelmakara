@@ -1,5 +1,6 @@
 import {
   claimTableCallPushNotification,
+  markTableCallPushSent,
   subscribeTableCalls,
   wasTableCallPushSent,
 } from './firebaseService';
@@ -10,8 +11,6 @@ import {
 } from './pushNotifications';
 
 const relayProcessed = new Set();
-const DEDUP_STORAGE_KEY = 'makara_table_call_push_dedup';
-const DEDUP_TTL_MS = 60 * 60 * 1000;
 
 function formatTableCallLabel(tableNumber) {
   const label = tableNumber != null && String(tableNumber).trim() !== ''
@@ -20,40 +19,28 @@ function formatTableCallLabel(tableNumber) {
   return `MASA ${label} Garson Çağırıyor`;
 }
 
-function loadPushDedup() {
-  try {
-    const raw = localStorage.getItem(DEDUP_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function wasPushDispatchedLocally(callId) {
-  const ts = loadPushDedup()[callId];
-  if (!ts) return false;
-  return Date.now() - ts < DEDUP_TTL_MS;
-}
+async function shouldSendPush(callId) {
+  if (await wasTableCallPushSent(callId)) return false;
 
-function markPushDispatchedLocally(callId) {
-  try {
-    const map = loadPushDedup();
-    map[callId] = Date.now();
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    for (const [id, ts] of Object.entries(map)) {
-      if (ts < cutoff) delete map[id];
-    }
-    localStorage.setItem(DEDUP_STORAGE_KEY, JSON.stringify(map));
-  } catch {
-    /* ignore */
-  }
+  const claimed = await claimTableCallPushNotification(callId);
+  if (claimed) return true;
+
+  await wait(1200);
+  if (await wasTableCallPushSent(callId)) return false;
+
+  // Claim başarısız (rules vb.) — yine de bir kez dene
+  return true;
 }
 
 /**
  * makara-16344 / tablecalls dinler.
- * Uygulama içi banner hemen; FCM yalnızca bir cihazdan, bir kez gider.
+ * Banner anında; FCM bir kez gider (OS tag ile çift bildirim engellenir).
  */
-export function startTableCallPushRelay(branchKey, staffId = null) {
+export function startTableCallPushRelay(branchKey) {
   if (!branchKey) {
     return () => {};
   }
@@ -65,8 +52,6 @@ export function startTableCallPushRelay(branchKey, staffId = null) {
 
   return subscribeTableCalls(async (call) => {
     if (!call?.id || relayProcessed.has(call.id)) return;
-    if (wasPushDispatchedLocally(call.id)) return;
-
     relayProcessed.add(call.id);
 
     const tableNumber = call.tableNumber;
@@ -75,30 +60,23 @@ export function startTableCallPushRelay(branchKey, staffId = null) {
     notifyTableCallLocally({ tableNumber, callId: call.id, message });
 
     try {
-      if (await wasTableCallPushSent(call.id)) {
-        markPushDispatchedLocally(call.id);
+      if (!(await shouldSendPush(call.id))) {
+        console.info('[table-call] Push zaten gönderilmiş:', call.id);
         return;
       }
 
-      const claimed = await claimTableCallPushNotification(call.id);
-      if (!claimed) {
-        return;
-      }
-
-      markPushDispatchedLocally(call.id);
-
-      console.info('[table-call] Push gönderiliyor', {
-        callId: call.id,
-        tableNumber,
-      });
+      console.info('[table-call] Push gönderiliyor', { callId: call.id, tableNumber });
 
       const result = await notifyTableCallPush({
         branchKey,
         tableNumber,
         callId: call.id,
         message,
-        excludeStaffId: staffId,
       });
+
+      if ((result?.sent ?? 0) > 0) {
+        await markTableCallPushSent(call.id, { sentCount: result.sent });
+      }
 
       console.info('[table-call] FCM push tamam', {
         callId: call.id,
