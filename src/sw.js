@@ -52,6 +52,12 @@ function parsePushPayload(payload) {
   return { customTitle, message, data };
 }
 
+function isTableCallData(data = {}) {
+  if (data?.type === 'table_call') return true;
+  const id = String(data?.announcementId || data?.callId || '');
+  return id.startsWith('tablecall-');
+}
+
 function formatPushDisplay(customTitle, message) {
   const headline = (customTitle || '').trim();
   const text = (message || '').trim();
@@ -66,25 +72,37 @@ function formatPushDisplay(customTitle, message) {
 function showPushNotification(customTitle, message, data) {
   const { title, body } = formatPushDisplay(customTitle, message);
   const icon = new URL('icons/icon-192.png', self.location.origin).href;
+  const tableCall = isTableCallData(data);
   const tag = data?.ticketId
     ? `makara-support-${data.ticketId}`
-    : data?.callId
-      ? `makara-table-call-${data.callId}`
+    : tableCall
+      ? `makara-table-call-${data.callId || data.announcementId || 'x'}`
       : data?.announcementId
         ? `makara-announcement-${data.announcementId}`
         : 'makara-staff-announcement';
+
+  if (tableCall) {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({ type: 'PLAY_TABLE_CALL_SOUND' });
+      });
+    });
+  }
+
   return self.registration.showNotification(title, {
     body,
     icon,
     badge: icon,
     tag,
+    silent: false,
+    vibrate: tableCall ? [100, 50, 100, 50, 160] : undefined,
     data: { ...data, title: customTitle, body: message },
   });
 }
 
 function openFromNotification(data) {
   const isSupport = data?.type === 'staff_support';
-  const isTableCall = data?.type === 'table_call';
+  const isTableCall = isTableCallData(data);
   const ticketId = data?.ticketId || '';
   const base = self.location.pathname.replace(/\/[^/]*$/, '/') || '/';
   const openPath = isTableCall

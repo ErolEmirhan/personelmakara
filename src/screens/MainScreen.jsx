@@ -26,6 +26,7 @@ import { ScreenTransition } from '../components/ui/ScreenTransition';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
 import { shouldShowBroadcast, shouldShowTableCalls } from '../utils/notificationPrefs';
+import { isTableCallPushData, playTableCallSound } from '../utils/tableCallSound';
 
 export function MainScreen() {
   const { theme, branchKey } = useBranch();
@@ -90,6 +91,10 @@ export function MainScreen() {
       if (event.data?.type === 'OPEN_TABLES') {
         setMainTab(MAIN_TABS.TABLES);
       }
+      if (event.data?.type === 'PLAY_TABLE_CALL_SOUND') {
+        if (staff?.id && !shouldShowTableCalls(staff.id)) return;
+        playTableCallSound();
+      }
       if (event.data?.type === 'OPEN_SUPPORT') {
         window.dispatchEvent(
           new CustomEvent('makara-open-support', {
@@ -112,9 +117,10 @@ export function MainScreen() {
         });
         return;
       }
-      if (data.type === 'table_call') {
+      if (isTableCallPushData(data)) {
         if (staff?.id && !shouldShowTableCalls(staff.id)) return;
         hapticLight();
+        playTableCallSound();
         setIncomingPush({
           title: detail.title || 'Garson çağrısı',
           body: detail.body || '',
