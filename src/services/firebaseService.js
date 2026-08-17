@@ -17,7 +17,6 @@ import {
   serverTimestamp,
   increment,
   writeBatch,
-  runTransaction,
 } from 'firebase/firestore';
 import {
   BRANCH_FIREBASE,
@@ -39,7 +38,6 @@ let tablesDb = null;
 let currentBranchKey = null;
 let tablesUnsub = null;
 let broadcastsUnsub = null;
-let tableCallsUnsub = null;
 let initPromise = null;
 
 const PRESENCE_HEARTBEAT_MS = 30000;
@@ -64,12 +62,8 @@ function cleanupListeners() {
   if (broadcastsUnsub) {
     try { broadcastsUnsub(); } catch { /* */ }
   }
-  if (tableCallsUnsub) {
-    try { tableCallsUnsub(); } catch { /* */ }
-  }
   tablesUnsub = null;
   broadcastsUnsub = null;
-  tableCallsUnsub = null;
 }
 
 export function isFirebaseReady() {
@@ -1042,147 +1036,6 @@ export function waitForMobileAction(actionDocId, timeoutMs = 45000) {
 export async function submitAndWaitMobileAction(action, timeoutMs = 45000) {
   const { actionDocId } = await submitMobileAction(action);
   return waitForMobileAction(actionDocId, timeoutMs);
-}
-
-// ── Garson çağrıları (QR menü → tablecalls) ─────────────────────────────────
-
-const TABLE_CALLS_COLLECTION = 'tablecalls';
-const TABLE_CALL_PUSH_LOG = 'table_call_push_log';
-
-function isPendingTableCall(data = {}) {
-  const status = String(data.status ?? data.state ?? 'pending').trim().toLowerCase();
-  return status === 'pending' || status === 'waiting' || status === 'new';
-}
-
-function attachTableCallsListener(db, onNewCall) {
-  let initialized = false;
-  const seen = new Set();
-
-  const emit = (docSnap) => {
-    const data = docSnap.data() || {};
-    if (!isPendingTableCall(data)) return;
-
-    const callId = docSnap.id;
-    if (seen.has(callId)) return;
-    seen.add(callId);
-
-    onNewCall({
-      id: callId,
-      source: 'main',
-      ...data,
-      tableNumber: resolveTableCallNumber(data),
-    });
-  };
-
-  return onSnapshot(
-    collection(db, TABLE_CALLS_COLLECTION),
-    (snap) => {
-      if (!initialized) {
-        initialized = true;
-        snap.docs.forEach((docSnap) => seen.add(docSnap.id));
-        return;
-      }
-
-      snap.docChanges().forEach((change) => {
-        if (change.type !== 'added') return;
-        emit(change.doc);
-      });
-    },
-    (err) => {
-      console.error('[table-call] dinleyici hatası:', err?.code || err?.message || err);
-    }
-  );
-}
-
-export function resolveTableCallNumber(data = {}) {
-  const raw =
-    data.tableNumber ??
-    data.table_number ??
-    data.tableNo ??
-    data.table ??
-    data.masaNo ??
-    null;
-  if (raw == null || raw === '') return null;
-  return String(raw).trim();
-}
-
-/** Yeni pending garson çağrılarını dinler (makara-16344 / tablecalls). */
-export function subscribeTableCalls(onNewCall) {
-  if (!isFirebaseReady()) {
-    console.warn('[table-call] Firebase hazır değil, dinleyici başlatılamadı');
-    return () => {};
-  }
-
-  if (tableCallsUnsub) {
-    try { tableCallsUnsub(); } catch { /* */ }
-  }
-
-  try {
-    const mainDb = requireMainDb();
-    console.info('[table-call] Dinleyici aktif (makara-16344)');
-
-    tableCallsUnsub = attachTableCallsListener(mainDb, onNewCall);
-
-    return () => {
-      if (tableCallsUnsub) {
-        try { tableCallsUnsub(); } catch { /* */ }
-        tableCallsUnsub = null;
-      }
-    };
-  } catch (err) {
-    console.error('[table-call] dinleyici kurulamadı:', err);
-    return () => {};
-  }
-}
-
-/** Aynı çağrı için yalnızca bir cihaz push gönderir (ana DB log). */
-export async function claimTableCallPushNotification(callId) {
-  if (!callId || !isFirebaseReady()) return false;
-  const db = requireMainDb();
-  const ref = doc(db, TABLE_CALL_PUSH_LOG, String(callId));
-
-  try {
-    return await runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      if (snap.exists() && snap.data()?.sent === true) return false;
-      if (snap.exists() && snap.data()?.claiming === true) return false;
-      tx.set(ref, {
-        callId: String(callId),
-        claiming: true,
-        claimedAt: serverTimestamp(),
-        source: 'pwa_relay',
-      }, { merge: true });
-      return true;
-    });
-  } catch (err) {
-    console.warn('[table-call] push claim hatası (fallback denenecek):', err?.code || err?.message || err);
-    return false;
-  }
-}
-
-export async function markTableCallPushSent(callId, meta = {}) {
-  if (!callId || !isFirebaseReady()) return;
-  try {
-    await setDoc(doc(requireMainDb(), TABLE_CALL_PUSH_LOG, String(callId)), {
-      callId: String(callId),
-      sent: true,
-      sentAt: serverTimestamp(),
-      source: 'pwa_relay',
-      ...meta,
-    }, { merge: true });
-  } catch (err) {
-    console.warn('[table-call] push log yazılamadı:', err?.code || err?.message || err);
-  }
-}
-
-export async function wasTableCallPushSent(callId) {
-  if (!callId || !isFirebaseReady()) return false;
-  try {
-    const snap = await getDoc(doc(requireMainDb(), TABLE_CALL_PUSH_LOG, String(callId)));
-    return snap.exists() && snap.data()?.sent === true;
-  } catch {
-    return false;
-  }
 }
 
 export function cleanupFirebase() {

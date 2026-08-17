@@ -496,38 +496,15 @@ export async function notifySupportResolvedPush({
   return data;
 }
 
-export function notifyTableCallLocally({ tableNumber, callId, message }) {
-  if (typeof window === 'undefined') return;
-
-  const title = 'Garson çağrısı';
-  const body = message || `MASA ${tableNumber ?? '?'} Garson Çağırıyor`;
-
-  window.dispatchEvent(
-    new CustomEvent('makara-table-call', {
-      detail: { title, body, callId, tableNumber },
-    })
-  );
-
-  showLocalNotification(title, body, {
-    type: 'table_call',
-    callId: callId || '',
-    tableNumber: tableNumber != null ? String(tableNumber) : '',
-  });
-}
-
-export async function notifyTableCallPush({
-  branchKey,
-  tableNumber,
-  callId,
-  message,
-}) {
+/** Ekip mesajı ile aynı yol — QR menü addDoc sonrası çağırır, PWA kapalıyken de push gider. */
+export async function sendTableCallPush({ branchKey, tableNumber, callId }) {
   if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
 
   const tokens = await fetchBranchPushTokens(branchKey);
   if (!tokens.length) return { sent: 0 };
 
   const title = 'Garson çağrısı';
-  const body = message || `MASA ${tableNumber ?? '?'} Garson Çağırıyor`;
+  const message = `MASA ${tableNumber} Garson Çağırıyor`;
 
   const res = await fetch(apiUrl('api/push-announcement'), {
     method: 'POST',
@@ -535,7 +512,7 @@ export async function notifyTableCallPush({
     body: JSON.stringify({
       branchKey,
       title,
-      message: body,
+      message,
       tokens,
       pushType: 'table_call',
       callId,
