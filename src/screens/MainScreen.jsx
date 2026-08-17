@@ -131,10 +131,24 @@ export function MainScreen() {
     };
     window.addEventListener('makara-push-message', onPushMessage);
 
+    const onTableCall = (event) => {
+      if (staff?.id && !shouldShowTableCalls(staff.id)) return;
+      const detail = event.detail || {};
+      hapticLight();
+      setIncomingPush({
+        title: detail.title || 'Garson çağrısı',
+        body: detail.body || '',
+        kind: 'table_call',
+        callId: detail.callId || null,
+      });
+    };
+    window.addEventListener('makara-table-call', onTableCall);
+
     return () => {
       cancelled = true;
       navigator.serviceWorker?.removeEventListener('message', onSwMessage);
       window.removeEventListener('makara-push-message', onPushMessage);
+      window.removeEventListener('makara-table-call', onTableCall);
     };
   }, [staff?.id, branchKey, setMainTab]);
 

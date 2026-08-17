@@ -1142,19 +1142,20 @@ export function subscribeTableCalls(onNewCall) {
   const unsubs = [];
 
   try {
-    unsubs.push(attachTableCallsListener(requireTablesDb(), 'tables', seen, onNewCall));
+    const mainDb = requireMainDb();
+    unsubs.push(attachTableCallsListener(mainDb, 'main', seen, onNewCall));
   } catch (err) {
-    console.error('[table-call] masalar DB dinleyicisi kurulamadı:', err);
+    console.error('[table-call] ana DB dinleyicisi kurulamadı:', err);
   }
 
   try {
     const mainDb = requireMainDb();
     const tablesDb = requireTablesDb();
     if (mainDb !== tablesDb) {
-      unsubs.push(attachTableCallsListener(mainDb, 'main', seen, onNewCall));
+      unsubs.push(attachTableCallsListener(tablesDb, 'tables', seen, onNewCall));
     }
   } catch (err) {
-    console.error('[table-call] ana DB dinleyicisi kurulamadı:', err);
+    console.error('[table-call] masalar DB dinleyicisi kurulamadı:', err);
   }
 
   if (!unsubs.length) {

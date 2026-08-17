@@ -496,6 +496,26 @@ export async function notifySupportResolvedPush({
   return data;
 }
 
+export function notifyTableCallLocally({ tableNumber, callId, message }) {
+  if (typeof window === 'undefined') return;
+
+  const title = 'Garson çağrısı';
+  const body = message || `MASA ${tableNumber ?? '?'} Garson Çağırıyor`;
+  const data = {
+    type: 'table_call',
+    callId: callId || '',
+    tableNumber: tableNumber != null ? String(tableNumber) : '',
+  };
+
+  window.dispatchEvent(
+    new CustomEvent('makara-table-call', {
+      detail: { title, body, callId, tableNumber },
+    })
+  );
+
+  showLocalNotification(title, body, data);
+}
+
 export async function notifyTableCallPush({ branchKey, tableNumber, callId, message }) {
   if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
 

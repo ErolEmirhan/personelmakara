@@ -59,17 +59,6 @@ export default async function handler(req, res) {
 
   try {
     const { db } = getAdminForBranch(branchKey);
-    const logRef = db.collection(TABLE_CALL_PUSH_LOG).doc(dedupeId);
-    const existing = await logRef.get();
-    if (existing.exists) {
-      return json(res, 200, {
-        success: true,
-        sent: 0,
-        skipped: true,
-        reason: 'already_sent',
-      });
-    }
-
     const tokens = normalizeTokens(body?.tokens).length
       ? normalizeTokens(body?.tokens)
       : await fetchBranchPushTokens(db, branchKey);
@@ -130,14 +119,19 @@ export default async function handler(req, res) {
       });
     }
 
-    await logRef.set({
-      callId: dedupeId,
-      tableNumber: tableLabel,
-      sentAt: new Date(),
-      source: 'push_table_call_api',
-      sent,
-      failed,
-    });
+    try {
+      const { db } = getAdminForBranch(branchKey);
+      await db.collection(TABLE_CALL_PUSH_LOG).doc(dedupeId).set({
+        callId: dedupeId,
+        tableNumber: tableLabel,
+        sentAt: new Date(),
+        source: 'push_table_call_api',
+        sent,
+        failed,
+      });
+    } catch (logErr) {
+      console.warn('push-table-call log yazılamadı:', logErr?.message || logErr);
+    }
 
     return json(res, 200, {
       success: true,
