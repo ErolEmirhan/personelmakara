@@ -7,6 +7,7 @@ import { groupOrderItemsByStaff } from '../components/order/ExistingOrdersPanel'
 import { StaffAvatar } from '../components/ui/StaffAvatar';
 import { OrdersViewSwitch, ORDERS_VIEWS } from '../components/orders/OrdersViewSwitch';
 import { PastSalesPanel } from '../components/orders/PastSalesPanel';
+import { OrderCallsPanel } from '../components/orders/OrderCallsPanel';
 import {
   adminSectionCardClass,
   adminSectionHeaderClass,
@@ -16,7 +17,7 @@ import {
   bossSectionHeaderClass,
 } from '../constants/bossTheme';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
-import { canViewDailySalesHistory } from '../utils/staffRole';
+import { canViewDailySalesHistory, canViewOrderCalls } from '../utils/staffRole';
 
 function collectOrderEntries(tables) {
   const entries = [];
@@ -176,6 +177,7 @@ export function OrdersScreen() {
   const [view, setView] = useState(ORDERS_VIEWS.ACTIVE);
 
   const showHistory = canViewDailySalesHistory(staff);
+  const showOrderCalls = canViewOrderCalls(staff);
 
   useEffect(() => {
     if (!branchKey) return;
@@ -211,18 +213,22 @@ export function OrdersScreen() {
 
   return (
     <div className="px-4" style={{ paddingBottom: BOTTOM_NAV_PADDING }}>
-      {showHistory && (
+      {(showHistory || showOrderCalls) && (
         <div className="mb-5">
           <OrdersViewSwitch
             view={view}
             onChange={setView}
             accent={theme.accentSolid}
+            showHistory={showHistory}
+            showOrderCalls={showOrderCalls}
           />
         </div>
       )}
 
       {view === ORDERS_VIEWS.HISTORY && showHistory ? (
         <PastSalesPanel />
+      ) : view === ORDERS_VIEWS.ORDER_CALLS && showOrderCalls ? (
+        <OrderCallsPanel theme={theme} />
       ) : (
         <ActiveOrdersPanel
           theme={theme}

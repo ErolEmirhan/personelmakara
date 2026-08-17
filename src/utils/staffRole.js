@@ -60,6 +60,11 @@ export function canViewDailySalesHistory(staff) {
   return hasManagerLevelAccess(staff);
 }
 
+/** QR / masa sipariş çağrıları (OrderCalls) */
+export function canViewOrderCalls(staff) {
+  return hasManagerLevelAccess(staff);
+}
+
 /** Ürün yönetimi paneli */
 export function canManageProducts(staff) {
   return hasManagerLevelAccess(staff);

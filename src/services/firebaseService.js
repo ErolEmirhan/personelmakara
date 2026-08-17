@@ -30,6 +30,7 @@ import {
   buildProductDetailProfile,
   isLegacyGenericContent,
 } from '../utils/productDetailDefaults';
+import { isOrderCallRecord, normalizeOrderCall, getOrderCallSortTime } from '../utils/orderCalls';
 
 let mainApp = null;
 let tablesApp = null;
@@ -940,6 +941,116 @@ export async function submitMobileOrder({ items, tableId, tableName, tableType, 
 
   const ref = await addDoc(collection(requireTablesDb(), 'mobile_orders'), payload);
   return { success: true, orderDocId: ref.id };
+}
+
+const ORDER_CALLS_COLLECTION = 'OrderCalls';
+
+function sortOrderCallsDesc(list) {
+  return [...list].sort((a, b) => getOrderCallSortTime(b) - getOrderCallSortTime(a));
+}
+
+export function subscribeOrderCalls(branchKey, onUpdate) {
+  if (!isFirebaseReady() || !branchKey) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  const db = requireMainDb();
+  const col = collection(db, ORDER_CALLS_COLLECTION);
+
+  const applySnapshot = (snap) => {
+    const rows = snap.docs
+      .map((docSnap) => normalizeOrderCall(docSnap))
+      .filter((row) => {
+        if (row.branchKey && row.branchKey !== branchKey) return false;
+        return isOrderCallRecord(row);
+      });
+    onUpdate(sortOrderCallsDesc(rows));
+  };
+
+  const q = query(
+    col,
+    where('branchKey', '==', branchKey),
+    where('status', '==', 'pending'),
+    where('type', '==', 'table_order'),
+    orderBy('timestamp', 'desc'),
+    limit(80)
+  );
+
+  let fallbackUnsub = null;
+  const primaryUnsub = onSnapshot(
+    q,
+    applySnapshot,
+    (err) => {
+      console.warn('OrderCalls indexed query failed, fallback scan:', err?.message || err);
+      if (fallbackUnsub) return;
+      const fallbackQ = query(col, where('branchKey', '==', branchKey), limit(120));
+      fallbackUnsub = onSnapshot(fallbackQ, applySnapshot, () => onUpdate([]));
+    }
+  );
+
+  return () => {
+    primaryUnsub();
+    if (fallbackUnsub) fallbackUnsub();
+  };
+}
+
+export async function approveOrderCall(orderCall, staff, table) {
+  if (!orderCall?.id || !staff?.id || !table?.id) {
+    return { success: false, error: 'Eksik sipariş veya masa bilgisi' };
+  }
+  if (!Array.isArray(orderCall.items) || orderCall.items.length === 0) {
+    return { success: false, error: 'Siparişte ürün yok' };
+  }
+
+  const callRef = doc(requireMainDb(), ORDER_CALLS_COLLECTION, orderCall.id);
+  await updateDoc(callRef, {
+    status: 'processing',
+    processingBy: String(staff.id),
+    processingAt: serverTimestamp(),
+  });
+
+  try {
+    const queueResult = await submitMobileOrder({
+      items: orderCall.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        category_id: item.category_id ?? null,
+        isGift: item.isGift || false,
+        isYanUrun: item.isYanUrun || false,
+        extraNote: item.extraNote?.trim() || null,
+      })),
+      tableId: table.id,
+      tableName: table.name,
+      tableType: table.type,
+      orderNote: orderCall.orderNote || null,
+      staffId: staff.id,
+      staffName: `${staff.name} ${staff.surname}`,
+    });
+
+    if (!queueResult?.success) {
+      await updateDoc(callRef, { status: 'pending' });
+      return { success: false, error: 'Sipariş kuyruğa eklenemedi' };
+    }
+
+    await deleteDoc(callRef);
+    return { success: true, orderDocId: queueResult.orderDocId };
+  } catch (err) {
+    try {
+      await updateDoc(callRef, { status: 'pending' });
+    } catch {
+      /* ignore */
+    }
+    return { success: false, error: err.message || 'Onaylama başarısız' };
+  }
+}
+
+export async function cancelOrderCall(orderCallId) {
+  if (!orderCallId) return { success: false, error: 'Kayıt bulunamadı' };
+  await deleteDoc(doc(requireMainDb(), ORDER_CALLS_COLLECTION, orderCallId));
+  return { success: true };
 }
 
 const MOBILE_QUEUE_COLLECTION = 'mobile_orders';
