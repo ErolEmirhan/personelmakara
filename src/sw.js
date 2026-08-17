@@ -93,6 +93,14 @@ function isTableCallData(data = {}) {
   return id.startsWith('tablecall-');
 }
 
+function isOrderCallData(data = {}) {
+  return data?.type === 'order_call';
+}
+
+function isOperationalPushData(data = {}) {
+  return isTableCallData(data) || isOrderCallData(data);
+}
+
 function formatPushDisplay(customTitle, message) {
   const headline = (customTitle || '').trim();
   const text = (message || '').trim();
@@ -108,21 +116,16 @@ function showPushNotification(customTitle, message, data) {
   const { title, body } = formatPushDisplay(customTitle, message);
   const icon = new URL('icons/icon-192.png', self.location.origin).href;
   const tableCall = isTableCallData(data);
+  const orderCall = isOrderCallData(data);
   const tag = data?.ticketId
     ? `makara-support-${data.ticketId}`
     : tableCall
       ? `makara-table-call-${data.callId || data.announcementId || 'x'}`
-      : data?.announcementId
-        ? `makara-announcement-${data.announcementId}`
-        : 'makara-staff-announcement';
-
-  if (tableCall) {
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      clients.forEach((client) => {
-        client.postMessage({ type: 'PLAY_TABLE_CALL_SOUND' });
-      });
-    });
-  }
+      : orderCall
+        ? `makara-order-call-${data.orderCallId || 'x'}`
+        : data?.announcementId
+          ? `makara-announcement-${data.announcementId}`
+          : 'makara-staff-announcement';
 
   return self.registration.showNotification(title, {
     body,
@@ -130,7 +133,7 @@ function showPushNotification(customTitle, message, data) {
     badge: icon,
     tag,
     silent: false,
-    vibrate: tableCall ? [100, 50, 100, 50, 160] : undefined,
+    vibrate: isOperationalPushData(data) ? [100, 50, 100, 50, 160] : undefined,
     data: { ...data, title: customTitle, body: message },
   });
 }
@@ -138,20 +141,27 @@ function showPushNotification(customTitle, message, data) {
 function openFromNotification(data) {
   const isSupport = data?.type === 'staff_support';
   const isTableCall = isTableCallData(data);
+  const isOrderCall = isOrderCallData(data);
   const ticketId = data?.ticketId || '';
+  const tableNumber = data?.tableNumber || '';
   const base = self.location.pathname.replace(/\/[^/]*$/, '/') || '/';
   const openPath = isTableCall
-    ? `${base}?tab=tables`
-    : isSupport && ticketId
-      ? `${base}?open=support&ticket=${encodeURIComponent(ticketId)}`
-      : `${base}?tab=notifications`;
+    ? `${base}?tab=tables${tableNumber ? `&table=${encodeURIComponent(tableNumber)}` : ''}`
+    : isOrderCall
+      ? `${base}?tab=orders&view=order_calls${tableNumber ? `&table=${encodeURIComponent(tableNumber)}` : ''}`
+      : isSupport && ticketId
+        ? `${base}?open=support&ticket=${encodeURIComponent(ticketId)}`
+        : `${base}?tab=notifications`;
 
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
     for (const client of windowClients) {
       client.postMessage({
-        type: isTableCall ? 'OPEN_TABLES' : isSupport ? 'OPEN_SUPPORT' : 'OPEN_NOTIFICATIONS',
+        type: isTableCall ? 'OPEN_TABLES' : isOrderCall ? 'OPEN_ORDERS' : isSupport ? 'OPEN_SUPPORT' : 'OPEN_NOTIFICATIONS',
         ticketId: ticketId || undefined,
         callId: data?.callId || undefined,
+        orderCallId: data?.orderCallId || undefined,
+        tableNumber: tableNumber || undefined,
+        ordersView: isOrderCall ? 'order_calls' : undefined,
       });
       if ('focus' in client) return client.focus();
     }
@@ -162,14 +172,6 @@ function openFromNotification(data) {
 
 onBackgroundMessage(messaging, (payload) => {
   const { customTitle, message, data } = parsePushPayload(payload);
-
-  if (isTableCallData(data)) {
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      clients.forEach((client) => {
-        client.postMessage({ type: 'PLAY_TABLE_CALL_SOUND' });
-      });
-    });
-  }
 
   // FCM notification payload varsa tarayıcı sesli bildirimi kendisi gösterir
   if (payload.notification) {

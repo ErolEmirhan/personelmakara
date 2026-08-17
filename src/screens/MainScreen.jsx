@@ -20,29 +20,58 @@ import { NotificationsScreen } from './NotificationsScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
 import { PendingCartModal } from '../components/modals/PendingCartModal';
-import { IncomingPushBanner } from '../components/notifications/IncomingPushBanner';
 import { TableCallSoundPrompt } from '../components/notifications/TableCallSoundPrompt';
 import { BranchSurface } from '../components/ui/BranchSurface';
 import { ScreenTransition } from '../components/ui/ScreenTransition';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
+import { useOperationalAlerts } from '../hooks/useOperationalAlerts';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
-import { shouldShowBroadcast, shouldShowTableCalls } from '../utils/notificationPrefs';
+import { ORDERS_VIEWS } from '../components/orders/OrdersViewSwitch';
+import { shouldShowBroadcast, shouldShowOrderUpdates, shouldShowTableCalls } from '../utils/notificationPrefs';
+import { pushEventKey, shouldProcessPushEvent } from '../utils/pushEventDedup';
 import {
   dismissTableCallSoundPrompt,
+  isOrderCallPushData,
   isTableCallPushData,
   isTableCallSoundEnabled,
   isTableCallSoundPromptDismissed,
   playTableCallSound,
 } from '../utils/tableCallSound';
 
+function resolvePushEventKey(data = {}) {
+  if (isTableCallPushData(data)) {
+    const callId = data.callId || String(data.announcementId || '').replace(/^tablecall-/, '');
+    return pushEventKey('table_call', callId);
+  }
+  if (isOrderCallPushData(data)) {
+    return pushEventKey('order_call', data.orderCallId);
+  }
+  return '';
+}
+
 export function MainScreen() {
   const { theme, branchKey } = useBranch();
   const { staff } = useAuth();
-  const { screen, mainTab, loadData, setMainTab, showToast, pendingCartPrompt, dismissPendingCartPrompt } = useApp();
+  const {
+    screen,
+    mainTab,
+    loadData,
+    setMainTab,
+    showBriefToast,
+    openTableByNumber,
+    setOrdersViewRequest,
+    pendingCartPrompt,
+    dismissPendingCartPrompt,
+  } = useApp();
   const [broadcast, setBroadcast] = useState(null);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
-  const [incomingPush, setIncomingPush] = useState(null);
   const [soundPromptOpen, setSoundPromptOpen] = useState(false);
+
+  useOperationalAlerts({
+    branchKey,
+    staffId: staff?.id,
+    enabled: !!staff?.id && !!branchKey,
+  });
 
   useAndroidBackNavigation({ accountOpen: quickActionsOpen, setAccountOpen: setQuickActionsOpen });
   useBackHandler(!!broadcast, () => setBroadcast(null));
@@ -58,6 +87,51 @@ export function MainScreen() {
     return () => stopStaffPresence(true);
   }, [staff, branchKey]);
 
+  const handleOperationalAlert = (detail) => {
+    if (!detail?.kind) return;
+
+    if (detail.kind === 'table_call' && staff?.id && !shouldShowTableCalls(staff.id)) return;
+    if (detail.kind === 'order_call' && staff?.id && !shouldShowOrderUpdates(staff.id)) return;
+
+    showBriefToast('info', detail.title, detail.body);
+  };
+
+  const handlePushData = (data, title, body) => {
+    if (data.type === 'staff_support') {
+      return { kind: 'support', title: title || 'Destek mesajı', body: body || '', ticketId: data.ticketId || null };
+    }
+
+    const eventKey = resolvePushEventKey(data);
+    if (eventKey && !shouldProcessPushEvent(eventKey)) {
+      return null;
+    }
+
+    if (isTableCallPushData(data)) {
+      if (staff?.id && !shouldShowTableCalls(staff.id)) return null;
+      playTableCallSound(staff?.id, eventKey);
+      hapticLight();
+      showBriefToast('info', title || 'Garson çağrısı', body || '');
+      return {
+        kind: 'table_call',
+        title: title || 'Garson çağrısı',
+        body: body || '',
+        callId: data.callId || null,
+        tableNumber: data.tableNumber || null,
+      };
+    }
+
+    if (isOrderCallPushData(data)) {
+      if (staff?.id && !shouldShowOrderUpdates(staff.id)) return null;
+      playTableCallSound(staff?.id, eventKey);
+      hapticLight();
+      showBriefToast('info', title || 'Masa siparişi', body || '');
+      return { kind: 'order_call' };
+    }
+
+    showBriefToast('info', title || 'Bildirim', body || '');
+    return { kind: 'notification' };
+  };
+
   useEffect(() => {
     if (!staff?.id || !branchKey || !isPushConfiguredForBranch(branchKey)) return undefined;
 
@@ -68,6 +142,20 @@ export function MainScreen() {
     }
     if (params.get('tab') === 'tables') {
       setMainTab(MAIN_TABS.TABLES);
+      const tableNumber = params.get('table');
+      if (tableNumber) {
+        openTableByNumber(tableNumber);
+      }
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    if (params.get('tab') === 'orders') {
+      setMainTab(MAIN_TABS.ORDERS);
+      const ordersView = params.get('view');
+      if (ordersView === 'order_calls') {
+        setOrdersViewRequest(ORDERS_VIEWS.ORDER_CALLS);
+      } else if (ordersView === 'table_calls') {
+        setOrdersViewRequest(ORDERS_VIEWS.TABLE_CALLS);
+      }
       window.history.replaceState({}, '', window.location.pathname);
     }
     if (params.get('open') === 'support') {
@@ -88,7 +176,6 @@ export function MainScreen() {
         ]);
       }
       if (cancelled) return;
-
       await requestPushOnAppEntry(branchKey, staff.id);
     })();
 
@@ -98,10 +185,17 @@ export function MainScreen() {
       }
       if (event.data?.type === 'OPEN_TABLES') {
         setMainTab(MAIN_TABS.TABLES);
+        if (event.data.tableNumber) {
+          openTableByNumber(event.data.tableNumber);
+        }
       }
-      if (event.data?.type === 'PLAY_TABLE_CALL_SOUND') {
-        if (staff?.id && !shouldShowTableCalls(staff.id)) return;
-        playTableCallSound(staff.id);
+      if (event.data?.type === 'OPEN_ORDERS') {
+        setMainTab(MAIN_TABS.ORDERS);
+        if (event.data.ordersView === 'order_calls') {
+          setOrdersViewRequest(ORDERS_VIEWS.ORDER_CALLS);
+        } else if (event.data.ordersView === 'table_calls') {
+          setOrdersViewRequest(ORDERS_VIEWS.TABLE_CALLS);
+        }
       }
       if (event.data?.type === 'OPEN_SUPPORT') {
         window.dispatchEvent(
@@ -116,55 +210,22 @@ export function MainScreen() {
     const onPushMessage = (event) => {
       const detail = event.detail || {};
       const data = detail.data || {};
-      if (data.type === 'staff_support') {
-        setIncomingPush({
-          title: detail.title || 'Destek mesajı',
-          body: detail.body || '',
-          kind: 'support',
-          ticketId: data.ticketId || null,
-        });
-        return;
-      }
-      if (isTableCallPushData(data)) {
-        if (staff?.id && !shouldShowTableCalls(staff.id)) return;
-        hapticLight();
-        playTableCallSound(staff.id);
-        setIncomingPush({
-          title: detail.title || 'Garson çağrısı',
-          body: detail.body || '',
-          kind: 'table_call',
-          callId: data.callId || null,
-        });
-        return;
-      }
-      setIncomingPush({
-        title: detail.title || 'Bildirim',
-        body: detail.body || '',
-        kind: 'notification',
-      });
+      handlePushData(data, detail.title, detail.body);
     };
     window.addEventListener('makara-push-message', onPushMessage);
 
-    const onTableCall = (event) => {
-      if (staff?.id && !shouldShowTableCalls(staff.id)) return;
-      const detail = event.detail || {};
-      hapticLight();
-      setIncomingPush({
-        title: detail.title || 'Garson çağrısı',
-        body: detail.body || '',
-        kind: 'table_call',
-        callId: detail.callId || null,
-      });
+    const onOperationalAlert = (event) => {
+      handleOperationalAlert(event.detail || {});
     };
-    window.addEventListener('makara-table-call', onTableCall);
+    window.addEventListener('makara-operational-alert', onOperationalAlert);
 
     return () => {
       cancelled = true;
       navigator.serviceWorker?.removeEventListener('message', onSwMessage);
       window.removeEventListener('makara-push-message', onPushMessage);
-      window.removeEventListener('makara-table-call', onTableCall);
+      window.removeEventListener('makara-operational-alert', onOperationalAlert);
     };
-  }, [staff?.id, branchKey, setMainTab]);
+  }, [staff?.id, branchKey, setMainTab, showBriefToast, openTableByNumber, setOrdersViewRequest]);
 
   useEffect(() => {
     if (!staff?.id || !branchKey || !isPushConfiguredForBranch(branchKey)) return undefined;
@@ -220,27 +281,6 @@ export function MainScreen() {
     <div className={`relative min-h-dvh ${theme.isSultan ? 'theme-sultan' : ''}`}>
       <BranchSurface />
       <AppHeader />
-      {incomingPush && (
-        <IncomingPushBanner
-          title={incomingPush.title}
-          body={incomingPush.body}
-          onOpen={() => {
-            if (incomingPush.kind === 'support') {
-              window.dispatchEvent(
-                new CustomEvent('makara-open-support', {
-                  detail: { ticketId: incomingPush.ticketId || null },
-                })
-              );
-            } else if (incomingPush.kind === 'table_call') {
-              setMainTab(MAIN_TABS.TABLES);
-            } else {
-              setMainTab(MAIN_TABS.NOTIFICATIONS);
-            }
-            setIncomingPush(null);
-          }}
-          onDismiss={() => setIncomingPush(null)}
-        />
-      )}
       <main style={{ paddingTop: MAIN_CONTENT_TOP_PADDING }}>
         {renderContent()}
       </main>

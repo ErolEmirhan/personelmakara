@@ -1,11 +1,13 @@
 /**
- * QR menü — addDoc('tablecalls') HEMEN SONRASI ekle.
- * Ekip mesajı (sendAnnouncementPush) ile aynı API çağrısı.
+ * QR menü — addDoc('OrderCalls') HEMEN SONRASI ekle.
+ * Garson çağrısı push'u ile aynı API yolu.
  */
-export async function sendTableCallPushFromQrMenu({
+export async function sendOrderCallPushFromQrMenu({
   db,
-  callId,
+  orderCallId,
   tableNumber,
+  total,
+  itemCount,
   branchKey = 'makara',
   pushApiOrigin = 'https://personelmakara.vercel.app',
 }) {
@@ -24,8 +26,15 @@ export async function sendTableCallPushFromQrMenu({
 
   if (!tokens.size) return { sent: 0, reason: 'no_tokens' };
 
-  const title = 'Garson çağrısı';
-  const message = `MASA ${tableNumber} Garson Çağırıyor`;
+  const label = tableNumber != null ? String(tableNumber).trim() : '?';
+  const title = 'Masa siparişi';
+  const totalLabel = Number(total) > 0 ? `${Number(total).toLocaleString('tr-TR')} ₺` : '';
+  const countLabel = Number(itemCount) > 0 ? `${itemCount} ürün` : '';
+  const detail = [countLabel, totalLabel].filter(Boolean).join(' · ');
+  const message = detail
+    ? `MASA ${label} sipariş verdi · ${detail}`
+    : `MASA ${label} sipariş verdi`;
+
   const root = pushApiOrigin.replace(/\/$/, '');
 
   const res = await fetch(`${root}/api/push-announcement`, {
@@ -36,10 +45,9 @@ export async function sendTableCallPushFromQrMenu({
       title,
       message,
       tokens: [...tokens],
-      pushType: 'table_call',
-      callId,
-      tableNumber: String(tableNumber),
-      announcementId: callId ? `tablecall-${callId}` : undefined,
+      pushType: 'order_call',
+      orderCallId,
+      tableNumber: label,
     }),
   });
 

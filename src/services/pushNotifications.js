@@ -501,14 +501,86 @@ export async function notifySupportResolvedPush({
 
 /** Ekip mesajı ile birebir aynı push yolu. */
 export async function sendTableCallPush({ branchKey, tableNumber, callId }) {
+  if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
+
+  const tokens = await fetchBranchPushTokens(branchKey);
+  if (!tokens.length) return { sent: 0 };
+
   const label = tableNumber != null && String(tableNumber).trim() !== ''
     ? String(tableNumber).trim()
     : '?';
 
-  return sendAnnouncementPush({
-    branchKey,
-    title: 'Garson çağrısı',
-    message: `MASA ${label} Garson Çağırıyor`,
-    announcementId: callId ? `tablecall-${callId}` : undefined,
+  const res = await fetch(apiUrl('api/push-announcement'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      branchKey,
+      title: 'Garson çağrısı',
+      message: `MASA ${label} Garson Çağırıyor`,
+      tokens,
+      pushType: 'table_call',
+      callId,
+      tableNumber: label,
+      announcementId: callId ? `tablecall-${callId}` : undefined,
+    }),
   });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Push API hatası');
+  }
+
+  if (data.invalidTokens?.length) {
+    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
+  }
+
+  return data;
+}
+
+export async function notifyOrderCallPush({
+  branchKey,
+  orderCallId,
+  tableNumber,
+  total,
+  itemCount,
+}) {
+  if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
+
+  const tokens = await fetchBranchPushTokens(branchKey);
+  if (!tokens.length) return { sent: 0 };
+
+  const label = tableNumber != null && String(tableNumber).trim() !== ''
+    ? String(tableNumber).trim()
+    : '?';
+  const totalLabel = Number(total) > 0 ? `${Number(total).toLocaleString('tr-TR')} ₺` : '';
+  const countLabel = Number(itemCount) > 0 ? `${itemCount} ürün` : '';
+  const detail = [countLabel, totalLabel].filter(Boolean).join(' · ');
+  const message = detail
+    ? `MASA ${label} sipariş verdi · ${detail}`
+    : `MASA ${label} sipariş verdi`;
+
+  const res = await fetch(apiUrl('api/push-announcement'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      branchKey,
+      title: 'Masa siparişi',
+      message,
+      tokens,
+      pushType: 'order_call',
+      orderCallId,
+      tableNumber: label,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Push API hatası');
+  }
+
+  if (data.invalidTokens?.length) {
+    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
+  }
+
+  return data;
 }

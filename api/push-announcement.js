@@ -19,6 +19,10 @@ function isTableCallPush(body) {
   return id.startsWith('tablecall-');
 }
 
+function isOrderCallPush(body) {
+  return body?.pushType === 'order_call';
+}
+
 export default async function handler(req, res) {
   applyPushApiCors(req, res);
   if (handlePushApiPreflight(req, res)) return;
@@ -40,9 +44,11 @@ export default async function handler(req, res) {
   const title = (body?.title || '').trim();
   const message = (body?.message || '').trim();
   const announcementId = body?.announcementId || null;
-  const pushType = body?.pushType || (isTableCallPush(body) ? 'table_call' : 'staff_announcement');
+  const pushType = body?.pushType
+    || (isTableCallPush(body) ? 'table_call' : isOrderCallPush(body) ? 'order_call' : 'staff_announcement');
   const ticketId = body?.ticketId || null;
   const callId = body?.callId || null;
+  const orderCallId = body?.orderCallId || null;
   const tableNumber = body?.tableNumber || null;
   const tokens = normalizeTokens(body?.tokens);
 
@@ -70,7 +76,9 @@ export default async function handler(req, res) {
     const origin = host ? `${protocol}://${host}` : '';
 
     const openUrl = pushType === 'table_call'
-      ? (origin ? `${origin}/?tab=tables` : '/?tab=tables')
+      ? (origin ? `${origin}/?tab=tables&table=${encodeURIComponent(tableNumber || '')}` : `/?tab=tables&table=${encodeURIComponent(tableNumber || '')}`)
+      : pushType === 'order_call'
+      ? (origin ? `${origin}/?tab=orders&view=order_calls&table=${encodeURIComponent(tableNumber || '')}` : `/?tab=orders&view=order_calls&table=${encodeURIComponent(tableNumber || '')}`)
       : pushType === 'staff_support' && ticketId
       ? (origin ? `${origin}/?open=support&ticket=${encodeURIComponent(ticketId)}` : `/?open=support&ticket=${encodeURIComponent(ticketId)}`)
       : (origin ? `${origin}/?tab=notifications` : '/?tab=notifications');
@@ -83,7 +91,12 @@ export default async function handler(req, res) {
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
       const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
       const tableCall = pushType === 'table_call';
-      const callTag = `makara-table-call-${announcementId || callId || 'x'}`;
+      const orderCall = pushType === 'order_call';
+      const callTag = tableCall
+        ? `makara-table-call-${announcementId || callId || 'x'}`
+        : orderCall
+          ? `makara-order-call-${orderCallId || 'x'}`
+          : `makara-announcement-${announcementId || 'x'}`;
       const iconUrl = origin ? `${origin}/icons/icon-192.png` : undefined;
 
       const payload = {
@@ -94,6 +107,7 @@ export default async function handler(req, res) {
           announcementId: String(announcementId || ''),
           ticketId: String(ticketId || ''),
           callId: String(callId || ''),
+          orderCallId: String(orderCallId || ''),
           tableNumber: String(tableNumber || ''),
           title: notificationTitle,
           body: notificationBody,
@@ -109,7 +123,7 @@ export default async function handler(req, res) {
         },
       };
 
-      if (tableCall) {
+      if (tableCall || orderCall) {
         payload.notification = {
           title: notificationTitle,
           body: notificationBody,
@@ -120,7 +134,7 @@ export default async function handler(req, res) {
           icon: iconUrl,
           badge: iconUrl,
           tag: callTag,
-          renotify: true,
+          renotify: false,
           requireInteraction: true,
         };
       }

@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBranch } from '../context/BranchContext';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
 import {
   fetchMyLikedAnnouncementIds,
+  subscribeRecentOrderCalls,
+  subscribeRecentTableCalls,
   subscribeStaffAnnouncements,
   toggleAnnouncementLike,
 } from '../services/firebaseService';
-import { BOTTOM_NAV_PADDING } from '../constants/nav';
+import { BOTTOM_NAV_PADDING, MAIN_TABS } from '../constants/nav';
+import { ORDERS_VIEWS } from '../components/orders/OrdersViewSwitch';
 import { StaffAvatar } from '../components/ui/StaffAvatar';
 import { AnnouncementDetailSheet } from '../components/notifications/AnnouncementDetailSheet';
 import { AnnouncementLikeButton } from '../components/notifications/AnnouncementLikeButton';
 import { AnnouncementRichText } from '../components/notifications/AnnouncementRichText';
 import { formatLastSeen } from '../utils/formatLastSeen';
+import { buildNotificationFeed } from '../utils/notificationFeed';
 import { hapticLight } from '../utils/haptic';
 
 function AnnouncementCard({
@@ -186,10 +191,48 @@ function AnnouncementCard({
   );
 }
 
+function OperationalFeedCard({ item, theme, onOpen }) {
+  const accent = theme.accentSolid;
+  const timeLabel = item.sortTime ? formatLastSeen(item.sortTime) : '';
+  const badge = item.kind === 'table_call' ? 'Garson çağrısı' : 'Masa siparişi';
+  const badgeColor = item.kind === 'table_call' ? 'text-amber-700 bg-amber-50' : 'text-violet-700 bg-violet-50';
+
+  return (
+    <article className="rounded-2xl bg-white border border-slate-100 shadow-[0_8px_30px_-22px_rgba(15,23,42,0.14)] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => onOpen(item)}
+        className="w-full text-left p-3.5 active:bg-slate-50/80 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className={`inline-block text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${badgeColor}`}>
+              {badge}
+            </span>
+            <p className="font-display font-bold text-[15px] text-slate-900 mt-2 leading-snug">
+              {item.title}
+            </p>
+            <p className="text-sm text-slate-600 mt-1">{item.body}</p>
+          </div>
+          {timeLabel && (
+            <span className="shrink-0 text-[10px] text-slate-400 pt-1">{timeLabel}</span>
+          )}
+        </div>
+        <p className="text-[11px] font-bold uppercase tracking-wide mt-3" style={{ color: accent }}>
+          Aç →
+        </p>
+      </button>
+    </article>
+  );
+}
+
 export function NotificationsScreen() {
   const { theme, branchKey } = useBranch();
   const { staff } = useAuth();
+  const { setMainTab, openTableByNumber, setOrdersViewRequest } = useApp();
   const [announcements, setAnnouncements] = useState([]);
+  const [tableCalls, setTableCalls] = useState([]);
+  const [orderCalls, setOrderCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [likedByMe, setLikedByMe] = useState({});
@@ -198,12 +241,42 @@ export function NotificationsScreen() {
   useEffect(() => {
     if (!branchKey) return undefined;
     setLoading(true);
-    const unsub = subscribeStaffAnnouncements(branchKey, (list) => {
+    const unsubAnnouncements = subscribeStaffAnnouncements(branchKey, (list) => {
       setAnnouncements(list);
       setLoading(false);
     });
-    return unsub;
+    const unsubTableCalls = subscribeRecentTableCalls(branchKey, setTableCalls);
+    const unsubOrderCalls = subscribeRecentOrderCalls(branchKey, setOrderCalls);
+    return () => {
+      unsubAnnouncements();
+      unsubTableCalls();
+      unsubOrderCalls();
+    };
   }, [branchKey]);
+
+  const feedItems = useMemo(
+    () => buildNotificationFeed({ announcements, tableCalls, orderCalls }),
+    [announcements, tableCalls, orderCalls]
+  );
+
+  const handleOpenFeedItem = useCallback((item) => {
+    hapticLight();
+    if (item.kind === 'table_call') {
+      setMainTab(MAIN_TABS.TABLES);
+      if (item.tableNumber != null) {
+        openTableByNumber(item.tableNumber);
+      }
+      return;
+    }
+    if (item.kind === 'order_call') {
+      setMainTab(MAIN_TABS.ORDERS);
+      setOrdersViewRequest(ORDERS_VIEWS.ORDER_CALLS);
+      return;
+    }
+    if (item.announcement) {
+      setSelected(item.announcement);
+    }
+  }, [setMainTab, openTableByNumber, setOrdersViewRequest]);
 
   useEffect(() => {
     if (!staff?.id || !announcements.length) {
@@ -259,7 +332,7 @@ export function NotificationsScreen() {
             <div className="w-9 h-9 border-[3px] border-violet-100 border-t-violet-500 rounded-full animate-spin" />
             <p className="text-sm text-slate-400">Yükleniyor…</p>
           </div>
-        ) : announcements.length === 0 ? (
+        ) : feedItems.length === 0 ? (
           <div className="text-center py-16 px-6 rounded-3xl bg-white border border-slate-100 shadow-sm">
             <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-violet-50 flex items-center justify-center text-violet-400">
               <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -268,22 +341,30 @@ export function NotificationsScreen() {
             </div>
             <p className="font-semibold text-slate-700">Henüz bildirim yok</p>
             <p className="text-sm text-slate-400 mt-1 max-w-[260px] mx-auto">
-              Yöneticinin gönderdiği duyurular ve ekip yorumları burada görünür.
+              Ekip duyuruları, garson çağrıları ve masa siparişleri burada kronolojik görünür.
             </p>
           </div>
         ) : (
           <ul className="space-y-3">
-            {announcements.map((item) => (
+            {feedItems.map((item) => (
               <li key={item.id}>
-                <AnnouncementCard
-                  item={item}
-                  theme={theme}
-                  onOpen={setSelected}
-                  isAuthor={staff && String(staff.id) === String(item.authorStaffId)}
-                  liked={!!likedByMe[item.id]}
-                  onToggleLike={staff ? () => handleToggleLike(item) : undefined}
-                  togglingLike={togglingLikeId === item.id}
-                />
+                {item.kind === 'announcement' ? (
+                  <AnnouncementCard
+                    item={item.announcement}
+                    theme={theme}
+                    onOpen={setSelected}
+                    isAuthor={staff && String(staff.id) === String(item.announcement.authorStaffId)}
+                    liked={!!likedByMe[item.announcement.id]}
+                    onToggleLike={staff ? () => handleToggleLike(item.announcement) : undefined}
+                    togglingLike={togglingLikeId === item.announcement.id}
+                  />
+                ) : (
+                  <OperationalFeedCard
+                    item={item}
+                    theme={theme}
+                    onOpen={handleOpenFeedItem}
+                  />
+                )}
               </li>
             ))}
           </ul>

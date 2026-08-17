@@ -60,6 +60,11 @@ export function canViewDailySalesHistory(staff) {
   return hasManagerLevelAccess(staff);
 }
 
+/** Garson çağrıları paneli — tüm personel */
+export function canViewTableCalls(staff) {
+  return !!staff?.id;
+}
+
 /** QR / masa sipariş çağrıları (OrderCalls) */
 export function canViewOrderCalls(staff) {
   return hasManagerLevelAccess(staff);

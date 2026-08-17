@@ -25,6 +25,7 @@ import {
 } from '../utils/announcementUnread';
 import { sanitizeCatalog } from '../utils/safeCatalog';
 import { registerAppBusyChecker } from '../utils/appBusy';
+import { startOrderCallPushRelay } from '../services/orderCallPushRelay';
 
 import { ToastOverlay } from '../components/ui/Toast';
 
@@ -34,6 +35,8 @@ export function AppProvider({ children }) {
   const { branchKey, configured } = useBranch();
   const { staff } = useAuth();
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  const [ordersViewRequest, setOrdersViewRequest] = useState(null);
   const [screen, setScreen] = useState('tables');
   const [mainTab, setMainTabState] = useState(MAIN_TABS.TABLES);
   const [tables, setTables] = useState([]);
@@ -78,10 +81,21 @@ export function AppProvider({ children }) {
     return false;
   }, []);
 
-  const showToast = useCallback((type, title, message) => {
+  const showToast = useCallback((type, title, message, durationMs = 3800) => {
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     setToast({ type, title, message });
-    window.setTimeout(() => setToast(null), 3800);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, durationMs);
   }, []);
+
+  const showBriefToast = useCallback((type, title, message) => {
+    showToast(type, title, message, 1000);
+  }, [showToast]);
 
   const loadData = useCallback(async (options = {}) => {
     const { force = false } = typeof options === 'boolean' ? { force: options } : options;
@@ -189,6 +203,11 @@ export function AppProvider({ children }) {
       tablesUnsubRef.current = null;
       unsubBroadcasts();
     };
+  }, [configured, branchKey]);
+
+  useEffect(() => {
+    if (!configured || !branchKey) return undefined;
+    return startOrderCallPushRelay(branchKey);
   }, [configured, branchKey]);
 
   useEffect(() => {
@@ -449,6 +468,16 @@ export function AppProvider({ children }) {
     await enterTable(table);
   }, [enterTable]);
 
+  const openTableByNumber = useCallback(async (tableNumber) => {
+    const num = Number(tableNumber);
+    if (!Number.isFinite(num)) return false;
+    const table = tables.find((item) => Number(item.number) === num);
+    if (!table) return false;
+    setMainTabState(MAIN_TABS.TABLES);
+    await selectTable(table);
+    return true;
+  }, [tables, selectTable]);
+
   const addToCart = useCallback((product, options = {}) => {
     const { isGift = false, extraNote = '', quantity = 1, displayName } = options;
     const itemName = displayName || product.name;
@@ -544,8 +573,10 @@ export function AppProvider({ children }) {
         searchQuery, setSearchQuery,
         loading, drawerOpen, setDrawerOpen,
         showToast,
+        showBriefToast,
         loadData, bootstrapCatalog, loadExistingOrders,
-        selectTable, goBackToTables, enterTable,
+        selectTable, goBackToTables, enterTable, openTableByNumber,
+        ordersViewRequest, setOrdersViewRequest,
         addToCart, updateCartItem, removeFromCart, clearCart,
         sendOrder, finalizeSentOrder, cartTotal, cartCount, cartBump,
         cartOpen, setCartOpen,

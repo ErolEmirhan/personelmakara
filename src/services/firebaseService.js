@@ -17,6 +17,8 @@ import {
   serverTimestamp,
   increment,
   writeBatch,
+  runTransaction,
+  arrayUnion,
 } from 'firebase/firestore';
 import {
   BRANCH_FIREBASE,
@@ -31,6 +33,11 @@ import {
   isLegacyGenericContent,
 } from '../utils/productDetailDefaults';
 import { isOrderCallRecord, normalizeOrderCall, getOrderCallSortTime } from '../utils/orderCalls';
+import {
+  isPendingTableCallStatus,
+  normalizeTableCall,
+  getTableCallSortTime,
+} from '../utils/tableCalls';
 
 let mainApp = null;
 let tablesApp = null;
@@ -943,6 +950,170 @@ export async function submitMobileOrder({ items, tableId, tableName, tableType, 
   return { success: true, orderDocId: ref.id };
 }
 
+// ── Garson çağrıları (QR menü → tablecalls, ana DB) ─────────────────
+
+const TABLE_CALLS_COLLECTION = 'tablecalls';
+const TABLE_CALL_PUSH_LOG = 'table_call_push_log';
+const ORDER_CALL_PUSH_LOG = 'order_call_push_log';
+
+function sortTableCallsDesc(list) {
+  return [...list].sort((a, b) => getTableCallSortTime(b) - getTableCallSortTime(a));
+}
+
+function matchesBranch(row, branchKey) {
+  if (!branchKey) return true;
+  if (!row.branchKey) return true;
+  return row.branchKey === branchKey;
+}
+
+export function subscribeActiveTableCalls(branchKey, onUpdate) {
+  if (!isFirebaseReady() || !branchKey) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  const db = requireMainDb();
+  const col = collection(db, TABLE_CALLS_COLLECTION);
+
+  const applySnapshot = (snap) => {
+    const rows = snap.docs
+      .map((docSnap) => normalizeTableCall(docSnap))
+      .filter((row) => matchesBranch(row, branchKey) && isPendingTableCallStatus(row.status));
+    onUpdate(sortTableCallsDesc(rows));
+  };
+
+  const q = query(
+    col,
+    where('status', '==', 'pending'),
+    orderBy('timestamp', 'desc'),
+    limit(60)
+  );
+
+  let fallbackUnsub = null;
+  const primaryUnsub = onSnapshot(
+    q,
+    applySnapshot,
+    (err) => {
+      console.warn('tablecalls indexed query failed, fallback scan:', err?.message || err);
+      if (fallbackUnsub) return;
+      fallbackUnsub = onSnapshot(query(col, limit(80)), applySnapshot, () => onUpdate([]));
+    }
+  );
+
+  return () => {
+    primaryUnsub();
+    if (fallbackUnsub) fallbackUnsub();
+  };
+}
+
+/** Bildirimler sekmesi — son garson çağrıları */
+export function subscribeRecentTableCalls(branchKey, onUpdate) {
+  if (!isFirebaseReady() || !branchKey) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  const db = requireMainDb();
+  const col = collection(db, TABLE_CALLS_COLLECTION);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+
+  return onSnapshot(
+    query(col, orderBy('timestamp', 'desc'), limit(40)),
+    (snap) => {
+      const rows = snap.docs
+        .map((docSnap) => normalizeTableCall(docSnap))
+        .filter((row) => {
+          if (!matchesBranch(row, branchKey)) return false;
+          const ts = getTableCallSortTime(row);
+          return ts === 0 || ts >= cutoff;
+        });
+      onUpdate(sortTableCallsDesc(rows));
+    },
+    () => onUpdate([])
+  );
+}
+
+export function subscribeNewTableCalls(branchKey, onNewCall) {
+  if (!isFirebaseReady() || !branchKey) return () => {};
+
+  const seen = new Set();
+  let initialized = false;
+
+  return subscribeActiveTableCalls(branchKey, (calls) => {
+    if (!initialized) {
+      calls.forEach((call) => seen.add(call.id));
+      initialized = true;
+      return;
+    }
+
+    calls.forEach((call) => {
+      if (seen.has(call.id)) return;
+      seen.add(call.id);
+      onNewCall(call);
+    });
+  });
+}
+
+export async function acknowledgeTableCall(callId, staff) {
+  if (!callId || !staff?.id) {
+    return { success: false, error: 'Eksik bilgi' };
+  }
+
+  const ref = doc(requireMainDb(), TABLE_CALLS_COLLECTION, callId);
+  const staffEntry = {
+    staffId: String(staff.id),
+    staffName: `${staff.name || ''} ${staff.surname || ''}`.trim() || 'Personel',
+    at: Date.now(),
+  };
+
+  await updateDoc(ref, {
+    acknowledgedBy: arrayUnion(staffEntry),
+    lastAcknowledgedAt: serverTimestamp(),
+  });
+
+  return { success: true };
+}
+
+export async function claimTableCallPushNotification(callId) {
+  if (!callId || !isFirebaseReady()) return false;
+  const ref = doc(requireMainDb(), TABLE_CALL_PUSH_LOG, String(callId));
+
+  try {
+    return await runTransaction(requireMainDb(), async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;
+      tx.set(ref, {
+        callId: String(callId),
+        sentAt: serverTimestamp(),
+        source: 'pwa_relay',
+      });
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+export async function claimOrderCallPushNotification(orderCallId) {
+  if (!orderCallId || !isFirebaseReady()) return false;
+  const ref = doc(requireMainDb(), ORDER_CALL_PUSH_LOG, String(orderCallId));
+
+  try {
+    return await runTransaction(requireMainDb(), async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;
+      tx.set(ref, {
+        orderCallId: String(orderCallId),
+        sentAt: serverTimestamp(),
+        source: 'pwa_relay',
+      });
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
 const ORDER_CALLS_COLLECTION = 'OrderCalls';
 
 function sortOrderCallsDesc(list) {
@@ -986,6 +1157,68 @@ export function subscribeOrderCalls(branchKey, onUpdate) {
       if (fallbackUnsub) return;
       const fallbackQ = query(col, where('branchKey', '==', branchKey), limit(120));
       fallbackUnsub = onSnapshot(fallbackQ, applySnapshot, () => onUpdate([]));
+    }
+  );
+
+  return () => {
+    primaryUnsub();
+    if (fallbackUnsub) fallbackUnsub();
+  };
+}
+
+export function subscribeNewOrderCalls(branchKey, onNewOrderCall) {
+  if (!isFirebaseReady() || !branchKey) return () => {};
+
+  const seen = new Set();
+  let initialized = false;
+
+  return subscribeOrderCalls(branchKey, (calls) => {
+    if (!initialized) {
+      calls.forEach((call) => seen.add(call.id));
+      initialized = true;
+      return;
+    }
+
+    calls.forEach((call) => {
+      if (seen.has(call.id)) return;
+      seen.add(call.id);
+      onNewOrderCall(call);
+    });
+  });
+}
+
+/** Bildirimler sekmesi — son QR masa siparişleri */
+export function subscribeRecentOrderCalls(branchKey, onUpdate) {
+  if (!isFirebaseReady() || !branchKey) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  const db = requireMainDb();
+  const col = collection(db, ORDER_CALLS_COLLECTION);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+
+  const applySnapshot = (snap) => {
+    const rows = snap.docs
+      .map((docSnap) => normalizeOrderCall(docSnap))
+      .filter((row) => {
+        if (row.branchKey && row.branchKey !== branchKey) return false;
+        if (row.type && row.type !== 'table_order') return false;
+        const ts = getOrderCallSortTime(row);
+        return ts === 0 || ts >= cutoff;
+      });
+    onUpdate(sortOrderCallsDesc(rows));
+  };
+
+  const q = query(col, where('branchKey', '==', branchKey), orderBy('timestamp', 'desc'), limit(40));
+
+  let fallbackUnsub = null;
+  const primaryUnsub = onSnapshot(
+    q,
+    applySnapshot,
+    () => {
+      if (fallbackUnsub) return;
+      fallbackUnsub = onSnapshot(query(col, where('branchKey', '==', branchKey), limit(60)), applySnapshot, () => onUpdate([]));
     }
   );
 

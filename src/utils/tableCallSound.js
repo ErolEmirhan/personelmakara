@@ -1,3 +1,5 @@
+import { shouldProcessPushEvent } from './pushEventDedup';
+
 let cachedSrc = null;
 let audioContext = null;
 let unlocked = false;
@@ -11,6 +13,14 @@ export function isTableCallPushData(data = {}) {
   if (data.type === 'table_call') return true;
   const id = String(data.announcementId || data.callId || '');
   return id.startsWith('tablecall-');
+}
+
+export function isOrderCallPushData(data = {}) {
+  return data.type === 'order_call';
+}
+
+export function isOperationalPushData(data = {}) {
+  return isTableCallPushData(data) || isOrderCallPushData(data);
 }
 
 function readStaffMap(key) {
@@ -185,10 +195,12 @@ export async function enableTableCallSoundWithTest(staffId) {
   }
 }
 
-/** Garson çağrısı — kısa çift ton bildirim sesi */
-export function playTableCallSound(staffId) {
+/** Garson çağrısı / masa siparişi — kısa bildirim sesi */
+export function playTableCallSound(staffId, eventKey = null) {
   if (typeof window === 'undefined') return;
   if (staffId && !isTableCallSoundEnabled(staffId)) return;
+
+  if (eventKey && !shouldProcessPushEvent(`sound:${eventKey}`)) return;
 
   runSound()?.catch(() => {});
 }

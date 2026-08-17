@@ -8,6 +8,7 @@ import { StaffAvatar } from '../components/ui/StaffAvatar';
 import { OrdersViewSwitch, ORDERS_VIEWS } from '../components/orders/OrdersViewSwitch';
 import { PastSalesPanel } from '../components/orders/PastSalesPanel';
 import { OrderCallsPanel } from '../components/orders/OrderCallsPanel';
+import { TableCallsPanel } from '../components/orders/TableCallsPanel';
 import {
   adminSectionCardClass,
   adminSectionHeaderClass,
@@ -17,7 +18,7 @@ import {
   bossSectionHeaderClass,
 } from '../constants/bossTheme';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
-import { canViewDailySalesHistory, canViewOrderCalls } from '../utils/staffRole';
+import { canViewDailySalesHistory, canViewOrderCalls, canViewTableCalls } from '../utils/staffRole';
 
 function collectOrderEntries(tables) {
   const entries = [];
@@ -172,12 +173,25 @@ function ActiveOrdersPanel({ theme, tables, entries, staffGroups, occupiedCount,
 export function OrdersScreen() {
   const { theme, branchKey } = useBranch();
   const { staff } = useAuth();
-  const { tables, loading, selectTable } = useApp();
+  const { tables, loading, selectTable, ordersViewRequest, setOrdersViewRequest } = useApp();
   const [staffList, setStaffList] = useState([]);
   const [view, setView] = useState(ORDERS_VIEWS.ACTIVE);
 
+  const showTableCalls = canViewTableCalls(staff);
   const showHistory = canViewDailySalesHistory(staff);
   const showOrderCalls = canViewOrderCalls(staff);
+
+  useEffect(() => {
+    if (!ordersViewRequest) return;
+    if (ordersViewRequest === ORDERS_VIEWS.ORDER_CALLS && showOrderCalls) {
+      setView(ORDERS_VIEWS.ORDER_CALLS);
+    } else if (ordersViewRequest === ORDERS_VIEWS.TABLE_CALLS && showTableCalls) {
+      setView(ORDERS_VIEWS.TABLE_CALLS);
+    } else if (ordersViewRequest === ORDERS_VIEWS.HISTORY && showHistory) {
+      setView(ORDERS_VIEWS.HISTORY);
+    }
+    setOrdersViewRequest(null);
+  }, [ordersViewRequest, showOrderCalls, showTableCalls, showHistory, setOrdersViewRequest]);
 
   useEffect(() => {
     if (!branchKey) return;
@@ -213,12 +227,13 @@ export function OrdersScreen() {
 
   return (
     <div className="px-4" style={{ paddingBottom: BOTTOM_NAV_PADDING }}>
-      {(showHistory || showOrderCalls) && (
+      {(showTableCalls || showHistory || showOrderCalls) && (
         <div className="mb-5">
           <OrdersViewSwitch
             view={view}
             onChange={setView}
             accent={theme.accentSolid}
+            showTableCalls={showTableCalls}
             showHistory={showHistory}
             showOrderCalls={showOrderCalls}
           />
@@ -227,6 +242,8 @@ export function OrdersScreen() {
 
       {view === ORDERS_VIEWS.HISTORY && showHistory ? (
         <PastSalesPanel />
+      ) : view === ORDERS_VIEWS.TABLE_CALLS && showTableCalls ? (
+        <TableCallsPanel theme={theme} />
       ) : view === ORDERS_VIEWS.ORDER_CALLS && showOrderCalls ? (
         <OrderCallsPanel theme={theme} />
       ) : (
