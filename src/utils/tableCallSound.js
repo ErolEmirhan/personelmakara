@@ -4,10 +4,47 @@ let unlocked = false;
 let preloadAudio = null;
 let unlockListenersAttached = false;
 
+const ENABLED_KEY = 'makara_table_call_sound_enabled';
+const DISMISSED_KEY = 'makara_table_call_sound_dismissed';
+
 export function isTableCallPushData(data = {}) {
   if (data.type === 'table_call') return true;
   const id = String(data.announcementId || data.callId || '');
   return id.startsWith('tablecall-');
+}
+
+function readStaffMap(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStaffFlag(key, staffId, value) {
+  if (!staffId) return;
+  const map = readStaffMap(key);
+  map[String(staffId)] = value;
+  localStorage.setItem(key, JSON.stringify(map));
+}
+
+export function isTableCallSoundEnabled(staffId) {
+  if (!staffId) return false;
+  return readStaffMap(ENABLED_KEY)[String(staffId)] === true;
+}
+
+export function isTableCallSoundPromptDismissed(staffId) {
+  if (!staffId) return false;
+  return readStaffMap(DISMISSED_KEY)[String(staffId)] === true;
+}
+
+export function dismissTableCallSoundPrompt(staffId) {
+  writeStaffFlag(DISMISSED_KEY, staffId, true);
+}
+
+export function resetTableCallSoundPromptDismiss(staffId) {
+  writeStaffFlag(DISMISSED_KEY, staffId, false);
 }
 
 function getSoundSrc() {
@@ -25,7 +62,7 @@ function getAudioContext() {
   return audioContext;
 }
 
-function playWebAudioChime() {
+function playWebAudioChime({ volume = 0.38 } = {}) {
   const ctx = getAudioContext();
   if (!ctx) return false;
 
@@ -37,7 +74,7 @@ function playWebAudioChime() {
   const gain = ctx.createGain();
   gain.connect(ctx.destination);
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.38, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(volume, now + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
 
   [[784, 0], [988, 0.17]].forEach(([freq, start]) => {
@@ -52,15 +89,20 @@ function playWebAudioChime() {
   return true;
 }
 
-function playFileSound() {
+function playFileSound(volume = 0.85) {
   if (!preloadAudio) {
     preloadAudio = new Audio(getSoundSrc());
     preloadAudio.preload = 'auto';
   }
 
   const clip = preloadAudio.cloneNode();
-  clip.volume = 0.85;
+  clip.volume = volume;
   return clip.play();
+}
+
+function runSound({ volume = 0.85 } = {}) {
+  playWebAudioChime({ volume: Math.min(volume, 0.45) });
+  return playFileSound(volume);
 }
 
 /** İlk dokunuş / bildirim izni sonrası mobil ses kilidini aç */
@@ -72,8 +114,6 @@ export function unlockTableCallSound() {
     if (ctx?.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
-
-    playWebAudioChime();
 
     if (!preloadAudio) {
       preloadAudio = new Audio(getSoundSrc());
@@ -117,15 +157,40 @@ export function attachTableCallSoundUnlock() {
   window.addEventListener('touchstart', unlockOnce, { passive: true, capture: true });
 }
 
+/** Kullanıcı dokunuşu ile sesi aç + test çal */
+export async function enableTableCallSoundWithTest(staffId) {
+  if (!staffId) return { ok: false, reason: 'no_staff' };
+
+  unlockTableCallSound();
+
+  const ctx = getAudioContext();
+  if (ctx?.state === 'suspended') {
+    try {
+      await ctx.resume();
+    } catch {
+      /* devam */
+    }
+  }
+
+  try {
+    await runSound({ volume: 0.9 });
+    writeStaffFlag(ENABLED_KEY, staffId, true);
+    writeStaffFlag(DISMISSED_KEY, staffId, false);
+    unlocked = true;
+    return { ok: true };
+  } catch {
+    writeStaffFlag(ENABLED_KEY, staffId, true);
+    unlocked = true;
+    return { ok: true, reason: 'played_fallback' };
+  }
+}
+
 /** Garson çağrısı — kısa çift ton bildirim sesi */
-export function playTableCallSound() {
+export function playTableCallSound(staffId) {
   if (typeof window === 'undefined') return;
+  if (staffId && !isTableCallSoundEnabled(staffId)) return;
 
-  playWebAudioChime();
-
-  playFileSound()?.catch(() => {
-    /* dosya yüklenemezse Web Audio yeterli */
-  });
+  runSound()?.catch(() => {});
 }
 
 attachTableCallSoundUnlock();

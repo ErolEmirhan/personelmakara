@@ -82,6 +82,10 @@ export default async function handler(req, res) {
 
     for (let i = 0; i < tokens.length; i += MAX_TOKENS_PER_BATCH) {
       const chunk = tokens.slice(i, i + MAX_TOKENS_PER_BATCH);
+      const tableCall = pushType === 'table_call';
+      const callTag = `makara-table-call-${announcementId || callId || 'x'}`;
+      const iconUrl = origin ? `${origin}/icons/icon-192.png` : undefined;
+
       const payload = {
         tokens: chunk,
         data: {
@@ -104,6 +108,22 @@ export default async function handler(req, res) {
           },
         },
       };
+
+      if (tableCall) {
+        payload.notification = {
+          title: notificationTitle,
+          body: notificationBody,
+        };
+        payload.webpush.notification = {
+          title: notificationTitle,
+          body: notificationBody,
+          icon: iconUrl,
+          badge: iconUrl,
+          tag: callTag,
+          renotify: true,
+          requireInteraction: true,
+        };
+      }
 
       const response = await messaging.sendEachForMulticast(payload);
 

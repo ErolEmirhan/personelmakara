@@ -21,12 +21,19 @@ import { SettingsScreen } from './SettingsScreen';
 import { BroadcastModal } from '../components/modals/BroadcastModal';
 import { PendingCartModal } from '../components/modals/PendingCartModal';
 import { IncomingPushBanner } from '../components/notifications/IncomingPushBanner';
+import { TableCallSoundPrompt } from '../components/notifications/TableCallSoundPrompt';
 import { BranchSurface } from '../components/ui/BranchSurface';
 import { ScreenTransition } from '../components/ui/ScreenTransition';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
 import { shouldShowBroadcast, shouldShowTableCalls } from '../utils/notificationPrefs';
-import { isTableCallPushData, playTableCallSound } from '../utils/tableCallSound';
+import {
+  dismissTableCallSoundPrompt,
+  isTableCallPushData,
+  isTableCallSoundEnabled,
+  isTableCallSoundPromptDismissed,
+  playTableCallSound,
+} from '../utils/tableCallSound';
 
 export function MainScreen() {
   const { theme, branchKey } = useBranch();
@@ -35,6 +42,7 @@ export function MainScreen() {
   const [broadcast, setBroadcast] = useState(null);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [incomingPush, setIncomingPush] = useState(null);
+  const [soundPromptOpen, setSoundPromptOpen] = useState(false);
 
   useAndroidBackNavigation({ accountOpen: quickActionsOpen, setAccountOpen: setQuickActionsOpen });
   useBackHandler(!!broadcast, () => setBroadcast(null));
@@ -93,7 +101,7 @@ export function MainScreen() {
       }
       if (event.data?.type === 'PLAY_TABLE_CALL_SOUND') {
         if (staff?.id && !shouldShowTableCalls(staff.id)) return;
-        playTableCallSound();
+        playTableCallSound(staff.id);
       }
       if (event.data?.type === 'OPEN_SUPPORT') {
         window.dispatchEvent(
@@ -120,7 +128,7 @@ export function MainScreen() {
       if (isTableCallPushData(data)) {
         if (staff?.id && !shouldShowTableCalls(staff.id)) return;
         hapticLight();
-        playTableCallSound();
+        playTableCallSound(staff.id);
         setIncomingPush({
           title: detail.title || 'Garson çağrısı',
           body: detail.body || '',
@@ -178,6 +186,18 @@ export function MainScreen() {
     };
     window.addEventListener('makara-broadcast', handler);
     return () => window.removeEventListener('makara-broadcast', handler);
+  }, [staff?.id]);
+
+  useEffect(() => {
+    if (!staff?.id || !shouldShowTableCalls(staff.id)) {
+      setSoundPromptOpen(false);
+      return;
+    }
+    if (isTableCallSoundEnabled(staff.id)) {
+      setSoundPromptOpen(false);
+      return;
+    }
+    setSoundPromptOpen(!isTableCallSoundPromptDismissed(staff.id));
   }, [staff?.id]);
 
   const showBottomNav = screen !== 'order';
@@ -241,6 +261,15 @@ export function MainScreen() {
         time={broadcast?.time}
       />
       <PendingCartModal />
+      <TableCallSoundPrompt
+        staffId={staff?.id}
+        open={soundPromptOpen}
+        onEnabled={() => setSoundPromptOpen(false)}
+        onDismiss={() => {
+          if (staff?.id) dismissTableCallSoundPrompt(staff.id);
+          setSoundPromptOpen(false);
+        }}
+      />
     </div>
   );
 }

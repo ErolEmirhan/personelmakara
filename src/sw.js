@@ -127,6 +127,20 @@ function openFromNotification(data) {
 
 onBackgroundMessage(messaging, (payload) => {
   const { customTitle, message, data } = parsePushPayload(payload);
+
+  if (isTableCallData(data)) {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({ type: 'PLAY_TABLE_CALL_SOUND' });
+      });
+    });
+  }
+
+  // FCM notification payload varsa tarayıcı sesli bildirimi kendisi gösterir
+  if (payload.notification) {
+    return;
+  }
+
   return showPushNotification(customTitle, message, data);
 });
 

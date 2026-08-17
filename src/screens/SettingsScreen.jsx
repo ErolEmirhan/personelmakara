@@ -27,6 +27,11 @@ import {
   pushRegistrationErrorMessage,
   registerStaffPushNotifications,
 } from '../services/pushNotifications';
+import {
+  enableTableCallSoundWithTest,
+  isTableCallSoundEnabled,
+  resetTableCallSoundPromptDismiss,
+} from '../utils/tableCallSound';
 import { BOTTOM_NAV_PADDING } from '../constants/nav';
 import { checkForAppUpdate, forcePwaRefresh } from '../pwa/registerUpdates';
 import { readLocalBuildVersion } from '../pwa/buildVersion';
@@ -116,6 +121,8 @@ export function SettingsScreen() {
   const [showLogout, setShowLogout] = useState(false);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateNote, setUpdateNote] = useState('');
+  const [tableCallSoundEnabled, setTableCallSoundEnabled] = useState(false);
+  const [soundBusy, setSoundBusy] = useState(false);
   const localBuild = readLocalBuildVersion() || __APP_VERSION__;
   const pushAvailable = isPushConfiguredForBranch(branchKey);
 
@@ -124,6 +131,7 @@ export function SettingsScreen() {
     setName(staff.name || '');
     setSurname(staff.surname || '');
     setNotifPrefs(loadNotificationPrefs(staff.id));
+    setTableCallSoundEnabled(isTableCallSoundEnabled(staff.id));
   }, [staff]);
 
   useEffect(() => {
@@ -271,6 +279,25 @@ export function SettingsScreen() {
     const next = { ...notifPrefs, [key]: value };
     setNotifPrefs(next);
     saveNotificationPrefs(staff.id, next);
+  };
+
+  const handleEnableTableCallSound = async () => {
+    if (!staff?.id || soundBusy) return;
+    setSoundBusy(true);
+    try {
+      const result = await enableTableCallSoundWithTest(staff.id);
+      if (result.ok) {
+        setTableCallSoundEnabled(true);
+        resetTableCallSoundPromptDismiss(staff.id);
+        showToast('success', 'Ses açık', 'Garson çağrısı sesi etkinleştirildi');
+      } else {
+        showToast('error', 'Hata', 'Ses açılamadı, tekrar deneyin');
+      }
+    } catch {
+      showToast('error', 'Hata', 'Ses açılamadı. Sessiz mod kapalı mı kontrol edin.');
+    } finally {
+      setSoundBusy(false);
+    }
   };
 
   const handleEnablePush = async () => {
@@ -470,6 +497,33 @@ export function SettingsScreen() {
               checked={notifPrefs.tableCalls}
               onChange={(v) => handleNotifChange('tableCalls', v)}
             />
+            {notifPrefs.tableCalls && (
+              <div className="pb-3 mb-1 border-b border-slate-50">
+                <p className="text-sm font-semibold text-slate-900">Garson çağrısı sesi</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Telefon garson çağrılarını duyabilmeniz için bir kez onay gerekir.
+                </p>
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  {tableCallSoundEnabled ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                      Ses açık
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+                      Ses kapalı
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleEnableTableCallSound}
+                    disabled={soundBusy}
+                    className="ml-auto text-xs font-bold px-3 py-2 rounded-xl bg-violet-600 text-white disabled:opacity-45 active:scale-[0.98] transition-all"
+                  >
+                    {soundBusy ? 'Deneniyor…' : tableCallSoundEnabled ? 'Tekrar dene' : 'Sesi aç ve dene'}
+                  </button>
+                </div>
+              </div>
+            )}
             <SettingsToggle
               label="Ekip bildirimleri"
               description="Personel çevrimiçi durumu ve ekip aktivitesi"
