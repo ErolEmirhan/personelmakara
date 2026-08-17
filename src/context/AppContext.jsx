@@ -194,8 +194,8 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     if (!configured || !branchKey) return undefined;
-    return startTableCallPushRelay(branchKey);
-  }, [configured, branchKey]);
+    return startTableCallPushRelay(branchKey, staff?.id ?? null);
+  }, [configured, branchKey, staff?.id]);
 
   useEffect(() => {
     if (!configured || !branchKey) return undefined;

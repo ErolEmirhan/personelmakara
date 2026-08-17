@@ -1048,44 +1048,27 @@ export async function submitAndWaitMobileAction(action, timeoutMs = 45000) {
 
 const TABLE_CALLS_COLLECTION = 'tablecalls';
 const TABLE_CALL_PUSH_LOG = 'table_call_push_log';
-const TABLE_CALL_RECENT_MS = 15 * 60 * 1000;
 
 function isPendingTableCall(data = {}) {
   const status = String(data.status ?? data.state ?? 'pending').trim().toLowerCase();
   return status === 'pending' || status === 'waiting' || status === 'new';
 }
 
-function tableCallCreatedMs(data = {}) {
-  const ts = data.createdAt ?? data.created_at ?? data.timestamp ?? data.created ?? null;
-  if (!ts) return null;
-  if (typeof ts.toDate === 'function') return ts.toDate().getTime();
-  if (typeof ts.seconds === 'number') return ts.seconds * 1000;
-  if (typeof ts === 'number') return ts;
-  const parsed = Date.parse(ts);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function isRecentTableCall(data = {}) {
-  const createdMs = tableCallCreatedMs(data);
-  if (createdMs == null) return true;
-  return Date.now() - createdMs <= TABLE_CALL_RECENT_MS;
-}
-
-function attachTableCallsListener(db, source, seen, onNewCall) {
+function attachTableCallsListener(db, onNewCall) {
   let initialized = false;
+  const seen = new Set();
 
   const emit = (docSnap) => {
     const data = docSnap.data() || {};
     if (!isPendingTableCall(data)) return;
-    if (data.pwaPushSentAt) return;
 
-    const dedupeKey = `${source}:${docSnap.id}`;
-    if (seen.has(dedupeKey)) return;
-    seen.add(dedupeKey);
+    const callId = docSnap.id;
+    if (seen.has(callId)) return;
+    seen.add(callId);
 
     onNewCall({
-      id: docSnap.id,
-      source,
+      id: callId,
+      source: 'main',
       ...data,
       tableNumber: resolveTableCallNumber(data),
     });
@@ -1096,21 +1079,16 @@ function attachTableCallsListener(db, source, seen, onNewCall) {
     (snap) => {
       if (!initialized) {
         initialized = true;
-        snap.docs.forEach((docSnap) => {
-          const data = docSnap.data() || {};
-          if (!isRecentTableCall(data)) return;
-          emit(docSnap);
-        });
         return;
       }
 
       snap.docChanges().forEach((change) => {
-        if (change.type !== 'added' && change.type !== 'modified') return;
+        if (change.type !== 'added') return;
         emit(change.doc);
       });
     },
     (err) => {
-      console.error(`[table-call] ${source} dinleyici hatası:`, err?.code || err?.message || err);
+      console.error('[table-call] dinleyici hatası:', err?.code || err?.message || err);
     }
   );
 }
@@ -1127,7 +1105,7 @@ export function resolveTableCallNumber(data = {}) {
   return String(raw).trim();
 }
 
-/** Yeni pending garson çağrılarını dinler (masalar + ana DB). */
+/** Yeni pending garson çağrılarını dinler (makara-16344 / tablecalls). */
 export function subscribeTableCalls(onNewCall) {
   if (!isFirebaseReady()) {
     console.warn('[table-call] Firebase hazır değil, dinleyici başlatılamadı');
@@ -1138,41 +1116,22 @@ export function subscribeTableCalls(onNewCall) {
     try { tableCallsUnsub(); } catch { /* */ }
   }
 
-  const seen = new Set();
-  const unsubs = [];
-
   try {
     const mainDb = requireMainDb();
-    unsubs.push(attachTableCallsListener(mainDb, 'main', seen, onNewCall));
-  } catch (err) {
-    console.error('[table-call] ana DB dinleyicisi kurulamadı:', err);
-  }
+    console.info('[table-call] Dinleyici aktif (makara-16344)');
 
-  try {
-    const mainDb = requireMainDb();
-    const tablesDb = requireTablesDb();
-    if (mainDb !== tablesDb) {
-      unsubs.push(attachTableCallsListener(tablesDb, 'tables', seen, onNewCall));
-    }
-  } catch (err) {
-    console.error('[table-call] masalar DB dinleyicisi kurulamadı:', err);
-  }
+    tableCallsUnsub = attachTableCallsListener(mainDb, onNewCall);
 
-  if (!unsubs.length) {
-    console.warn('[table-call] Hiçbir Firestore dinleyicisi başlatılamadı');
+    return () => {
+      if (tableCallsUnsub) {
+        try { tableCallsUnsub(); } catch { /* */ }
+        tableCallsUnsub = null;
+      }
+    };
+  } catch (err) {
+    console.error('[table-call] dinleyici kurulamadı:', err);
     return () => {};
   }
-
-  console.info('[table-call] Dinleyici aktif (%d kaynak)', unsubs.length);
-
-  tableCallsUnsub = () => {
-    unsubs.forEach((unsub) => {
-      try { unsub(); } catch { /* */ }
-    });
-    tableCallsUnsub = null;
-  };
-
-  return tableCallsUnsub;
 }
 
 /** Aynı çağrı için yalnızca bir cihaz push gönderir (ana DB log). */

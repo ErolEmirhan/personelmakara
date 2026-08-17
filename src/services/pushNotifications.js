@@ -501,25 +501,28 @@ export function notifyTableCallLocally({ tableNumber, callId, message }) {
 
   const title = 'Garson çağrısı';
   const body = message || `MASA ${tableNumber ?? '?'} Garson Çağırıyor`;
-  const data = {
-    type: 'table_call',
-    callId: callId || '',
-    tableNumber: tableNumber != null ? String(tableNumber) : '',
-  };
 
   window.dispatchEvent(
     new CustomEvent('makara-table-call', {
       detail: { title, body, callId, tableNumber },
     })
   );
-
-  showLocalNotification(title, body, data);
 }
 
-export async function notifyTableCallPush({ branchKey, tableNumber, callId, message }) {
+export async function notifyTableCallPush({
+  branchKey,
+  tableNumber,
+  callId,
+  message,
+  excludeStaffId = null,
+}) {
   if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
 
-  const tokens = await fetchBranchPushTokens(branchKey);
+  let tokens = await fetchBranchPushTokens(branchKey);
+  if (excludeStaffId != null) {
+    const ownTokens = new Set(await fetchStaffPushTokens(excludeStaffId));
+    tokens = tokens.filter((t) => !ownTokens.has(t));
+  }
   if (!tokens.length) return { sent: 0 };
 
   const title = 'Garson çağrısı';
