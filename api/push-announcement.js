@@ -32,6 +32,8 @@ export default async function handler(req, res) {
   const announcementId = body?.announcementId || null;
   const pushType = body?.pushType || 'staff_announcement';
   const ticketId = body?.ticketId || null;
+  const callId = body?.callId || null;
+  const tableNumber = body?.tableNumber || null;
   const tokens = normalizeTokens(body?.tokens);
 
   if (!branchKey || !message) {
@@ -57,7 +59,9 @@ export default async function handler(req, res) {
     const protocol = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
     const origin = host ? `${protocol}://${host}` : '';
 
-    const openUrl = pushType === 'staff_support' && ticketId
+    const openUrl = pushType === 'table_call'
+      ? (origin ? `${origin}/?tab=tables` : '/?tab=tables')
+      : pushType === 'staff_support' && ticketId
       ? (origin ? `${origin}/?open=support&ticket=${encodeURIComponent(ticketId)}` : `/?open=support&ticket=${encodeURIComponent(ticketId)}`)
       : (origin ? `${origin}/?tab=notifications` : '/?tab=notifications');
 
@@ -75,6 +79,8 @@ export default async function handler(req, res) {
           branchKey: String(branchKey),
           announcementId: String(announcementId || ''),
           ticketId: String(ticketId || ''),
+          callId: String(callId || ''),
+          tableNumber: String(tableNumber || ''),
           title: notificationTitle,
           body: notificationBody,
         },

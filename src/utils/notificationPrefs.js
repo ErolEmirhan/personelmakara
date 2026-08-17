@@ -4,6 +4,7 @@ export const DEFAULT_NOTIFICATION_PREFS = {
   broadcasts: true,
   orderUpdates: true,
   teamOnline: true,
+  tableCalls: true,
 };
 
 function readAll() {
@@ -42,4 +43,8 @@ export function shouldShowOrderUpdates(staffId) {
 
 export function shouldShowTeamOnline(staffId) {
   return loadNotificationPrefs(staffId).teamOnline;
+}
+
+export function shouldShowTableCalls(staffId) {
+  return loadNotificationPrefs(staffId).tableCalls;
 }

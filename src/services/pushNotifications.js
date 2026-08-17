@@ -289,9 +289,11 @@ function showLocalNotification(customTitle, message, data = {}) {
   const icon = new URL('icons/icon-192.png', `${window.location.origin}${base}`).href;
   const tag = data?.ticketId
     ? `makara-support-${data.ticketId}`
-    : data?.announcementId
-      ? `makara-announcement-${data.announcementId}`
-      : 'makara-staff-announcement';
+    : data?.callId
+      ? `makara-table-call-${data.callId}`
+      : data?.announcementId
+        ? `makara-announcement-${data.announcementId}`
+        : 'makara-staff-announcement';
 
   try {
     if ('serviceWorker' in navigator) {
@@ -479,6 +481,41 @@ export async function notifySupportResolvedPush({
       tokens: targetTokens,
       pushType: 'staff_support',
       ticketId,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Push API hatası');
+  }
+
+  if (data.invalidTokens?.length) {
+    await pruneInvalidPushTokens(branchKey, data.invalidTokens).catch(() => {});
+  }
+
+  return data;
+}
+
+export async function notifyTableCallPush({ branchKey, tableNumber, callId, message }) {
+  if (!isPushConfiguredForBranch(branchKey)) return { sent: 0 };
+
+  const tokens = await fetchBranchPushTokens(branchKey);
+  if (!tokens.length) return { sent: 0 };
+
+  const title = 'Garson çağrısı';
+  const body = message || `MASA ${tableNumber ?? '?'} Garson Çağırıyor`;
+
+  const res = await fetch(apiUrl('api/push-announcement'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      branchKey,
+      title,
+      message: body,
+      tokens,
+      pushType: 'table_call',
+      callId,
+      tableNumber: tableNumber != null ? String(tableNumber) : '',
     }),
   });
 

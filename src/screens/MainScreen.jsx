@@ -7,6 +7,8 @@ import {
   isPushConfiguredForBranch,
   requestPushOnAppEntry,
 } from '../services/pushNotifications';
+import { startTableCallPushRelay } from '../services/tableCallPushRelay';
+import { hapticLight } from '../utils/haptic';
 import { AppHeader } from '../components/layout/AppHeader';
 import { BottomNav } from '../components/layout/BottomNav';
 import { QuickActionsBottomSheet } from '../components/layout/QuickActionsBottomSheet';
@@ -24,7 +26,7 @@ import { BranchSurface } from '../components/ui/BranchSurface';
 import { ScreenTransition } from '../components/ui/ScreenTransition';
 import { useAndroidBackNavigation, useBackHandler } from '../hooks/useBackButton';
 import { MAIN_TABS, MAIN_CONTENT_TOP_PADDING } from '../constants/nav';
-import { shouldShowBroadcast } from '../utils/notificationPrefs';
+import { shouldShowBroadcast, shouldShowTableCalls } from '../utils/notificationPrefs';
 
 export function MainScreen() {
   const { theme, branchKey } = useBranch();
@@ -49,11 +51,20 @@ export function MainScreen() {
   }, [staff, branchKey]);
 
   useEffect(() => {
+    if (!staff?.id || !branchKey) return undefined;
+    return startTableCallPushRelay(branchKey);
+  }, [staff?.id, branchKey]);
+
+  useEffect(() => {
     if (!staff?.id || !branchKey || !isPushConfiguredForBranch(branchKey)) return undefined;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'notifications') {
       setMainTab(MAIN_TABS.NOTIFICATIONS);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    if (params.get('tab') === 'tables') {
+      setMainTab(MAIN_TABS.TABLES);
       window.history.replaceState({}, '', window.location.pathname);
     }
     if (params.get('open') === 'support') {
@@ -82,6 +93,9 @@ export function MainScreen() {
       if (event.data?.type === 'OPEN_NOTIFICATIONS') {
         setMainTab(MAIN_TABS.NOTIFICATIONS);
       }
+      if (event.data?.type === 'OPEN_TABLES') {
+        setMainTab(MAIN_TABS.TABLES);
+      }
       if (event.data?.type === 'OPEN_SUPPORT') {
         window.dispatchEvent(
           new CustomEvent('makara-open-support', {
@@ -101,6 +115,17 @@ export function MainScreen() {
           body: detail.body || '',
           kind: 'support',
           ticketId: data.ticketId || null,
+        });
+        return;
+      }
+      if (data.type === 'table_call') {
+        if (staff?.id && !shouldShowTableCalls(staff.id)) return;
+        hapticLight();
+        setIncomingPush({
+          title: detail.title || 'Garson çağrısı',
+          body: detail.body || '',
+          kind: 'table_call',
+          callId: data.callId || null,
         });
         return;
       }
@@ -172,6 +197,8 @@ export function MainScreen() {
                   detail: { ticketId: incomingPush.ticketId || null },
                 })
               );
+            } else if (incomingPush.kind === 'table_call') {
+              setMainTab(MAIN_TABS.TABLES);
             } else {
               setMainTab(MAIN_TABS.NOTIFICATIONS);
             }

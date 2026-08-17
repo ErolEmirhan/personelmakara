@@ -465,6 +465,12 @@ export function SettingsScreen() {
               onChange={(v) => handleNotifChange('orderUpdates', v)}
             />
             <SettingsToggle
+              label="Garson çağrıları"
+              description="QR menüden gelen masa çağrıları (push bildirimi)"
+              checked={notifPrefs.tableCalls}
+              onChange={(v) => handleNotifChange('tableCalls', v)}
+            />
+            <SettingsToggle
               label="Ekip bildirimleri"
               description="Personel çevrimiçi durumu ve ekip aktivitesi"
               checked={notifPrefs.teamOnline}

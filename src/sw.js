@@ -68,9 +68,11 @@ function showPushNotification(customTitle, message, data) {
   const icon = new URL('icons/icon-192.png', self.location.origin).href;
   const tag = data?.ticketId
     ? `makara-support-${data.ticketId}`
-    : data?.announcementId
-      ? `makara-announcement-${data.announcementId}`
-      : 'makara-staff-announcement';
+    : data?.callId
+      ? `makara-table-call-${data.callId}`
+      : data?.announcementId
+        ? `makara-announcement-${data.announcementId}`
+        : 'makara-staff-announcement';
   return self.registration.showNotification(title, {
     body,
     icon,
@@ -82,17 +84,21 @@ function showPushNotification(customTitle, message, data) {
 
 function openFromNotification(data) {
   const isSupport = data?.type === 'staff_support';
+  const isTableCall = data?.type === 'table_call';
   const ticketId = data?.ticketId || '';
   const base = self.location.pathname.replace(/\/[^/]*$/, '/') || '/';
-  const openPath = isSupport && ticketId
-    ? `${base}?open=support&ticket=${encodeURIComponent(ticketId)}`
-    : `${base}?tab=notifications`;
+  const openPath = isTableCall
+    ? `${base}?tab=tables`
+    : isSupport && ticketId
+      ? `${base}?open=support&ticket=${encodeURIComponent(ticketId)}`
+      : `${base}?tab=notifications`;
 
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
     for (const client of windowClients) {
       client.postMessage({
-        type: isSupport ? 'OPEN_SUPPORT' : 'OPEN_NOTIFICATIONS',
+        type: isTableCall ? 'OPEN_TABLES' : isSupport ? 'OPEN_SUPPORT' : 'OPEN_NOTIFICATIONS',
         ticketId: ticketId || undefined,
+        callId: data?.callId || undefined,
       });
       if ('focus' in client) return client.focus();
     }

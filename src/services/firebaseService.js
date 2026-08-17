@@ -17,6 +17,7 @@ import {
   serverTimestamp,
   increment,
   writeBatch,
+  runTransaction,
 } from 'firebase/firestore';
 import {
   BRANCH_FIREBASE,
@@ -38,6 +39,7 @@ let tablesDb = null;
 let currentBranchKey = null;
 let tablesUnsub = null;
 let broadcastsUnsub = null;
+let tableCallsUnsub = null;
 let initPromise = null;
 
 const PRESENCE_HEARTBEAT_MS = 30000;
@@ -62,8 +64,12 @@ function cleanupListeners() {
   if (broadcastsUnsub) {
     try { broadcastsUnsub(); } catch { /* */ }
   }
+  if (tableCallsUnsub) {
+    try { tableCallsUnsub(); } catch { /* */ }
+  }
   tablesUnsub = null;
   broadcastsUnsub = null;
+  tableCallsUnsub = null;
 }
 
 export function isFirebaseReady() {
@@ -1036,6 +1042,82 @@ export function waitForMobileAction(actionDocId, timeoutMs = 45000) {
 export async function submitAndWaitMobileAction(action, timeoutMs = 45000) {
   const { actionDocId } = await submitMobileAction(action);
   return waitForMobileAction(actionDocId, timeoutMs);
+}
+
+// ── Garson çağrıları (QR menü → tablecalls) ─────────────────────────────────
+
+const TABLE_CALLS_COLLECTION = 'tablecalls';
+
+export function resolveTableCallNumber(data = {}) {
+  const raw =
+    data.tableNumber ??
+    data.table_number ??
+    data.tableNo ??
+    data.table ??
+    data.masaNo ??
+    null;
+  if (raw == null || raw === '') return null;
+  return String(raw).trim();
+}
+
+/** Yeni pending garson çağrılarını dinler (ilk yükleme atlanır). */
+export function subscribeTableCalls(onNewCall) {
+  if (!isFirebaseReady()) return () => {};
+
+  if (tableCallsUnsub) {
+    try { tableCallsUnsub(); } catch { /* */ }
+  }
+
+  const db = requireTablesDb();
+  const q = query(collection(db, TABLE_CALLS_COLLECTION), where('status', '==', 'pending'));
+  let initialized = false;
+
+  tableCallsUnsub = onSnapshot(
+    q,
+    (snap) => {
+      if (!initialized) {
+        initialized = true;
+        return;
+      }
+      snap.docChanges().forEach((change) => {
+        if (change.type !== 'added') return;
+        const data = change.doc.data() || {};
+        if (data.status !== 'pending') return;
+        onNewCall({
+          id: change.doc.id,
+          ...data,
+          tableNumber: resolveTableCallNumber(data),
+        });
+      });
+    },
+    (err) => {
+      console.error('tablecalls snapshot error:', err);
+    }
+  );
+
+  return () => {
+    if (tableCallsUnsub) {
+      try { tableCallsUnsub(); } catch { /* */ }
+      tableCallsUnsub = null;
+    }
+  };
+}
+
+/** Aynı çağrı için yalnızca bir cihaz push gönderir. */
+export async function claimTableCallPushNotification(callId) {
+  if (!callId || !isFirebaseReady()) return false;
+  const db = requireTablesDb();
+  const ref = doc(db, TABLE_CALLS_COLLECTION, callId);
+
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return false;
+    const data = snap.data() || {};
+    if (data.status !== 'pending') return false;
+    if (data.pwaPushSentAt) return false;
+    tx.update(ref, { pwaPushSentAt: serverTimestamp() });
+    return true;
+  });
 }
 
 export function cleanupFirebase() {
