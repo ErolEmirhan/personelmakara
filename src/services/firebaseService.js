@@ -38,7 +38,6 @@ let tablesDb = null;
 let currentBranchKey = null;
 let tablesUnsub = null;
 let broadcastsUnsub = null;
-let tableCallsUnsub = null;
 let initPromise = null;
 
 const PRESENCE_HEARTBEAT_MS = 30000;
@@ -63,12 +62,8 @@ function cleanupListeners() {
   if (broadcastsUnsub) {
     try { broadcastsUnsub(); } catch { /* */ }
   }
-  if (tableCallsUnsub) {
-    try { tableCallsUnsub(); } catch { /* */ }
-  }
   tablesUnsub = null;
   broadcastsUnsub = null;
-  tableCallsUnsub = null;
 }
 
 export function isFirebaseReady() {
@@ -1041,54 +1036,6 @@ export function waitForMobileAction(actionDocId, timeoutMs = 45000) {
 export async function submitAndWaitMobileAction(action, timeoutMs = 45000) {
   const { actionDocId } = await submitMobileAction(action);
   return waitForMobileAction(actionDocId, timeoutMs);
-}
-
-// ── Garson çağrıları (makara-16344 / tablecalls) ────────────────────────────
-
-const TABLE_CALLS_COLLECTION = 'tablecalls';
-
-/** Yeni tablecalls kayıtlarını dinler — yalnızca yeni eklenenler. */
-export function subscribeTableCalls(onNewCall) {
-  if (!isFirebaseReady()) return () => {};
-
-  if (tableCallsUnsub) {
-    try { tableCallsUnsub(); } catch { /* */ }
-  }
-
-  const db = requireMainDb();
-  let ready = false;
-  const seen = new Set();
-
-  tableCallsUnsub = onSnapshot(
-    collection(db, TABLE_CALLS_COLLECTION),
-    (snap) => {
-      if (!ready) {
-        ready = true;
-        snap.docs.forEach((d) => seen.add(d.id));
-        return;
-      }
-      snap.docChanges().forEach((change) => {
-        if (change.type !== 'added') return;
-        const id = change.doc.id;
-        if (seen.has(id)) return;
-        seen.add(id);
-        const data = change.doc.data() || {};
-        const status = String(data.status ?? 'pending').toLowerCase();
-        if (status !== 'pending' && status !== 'waiting' && status !== 'new') return;
-        const tableNumber =
-          data.tableNumber ?? data.table_number ?? data.tableNo ?? data.table ?? null;
-        onNewCall({ id, tableNumber, ...data });
-      });
-    },
-    (err) => console.error('[table-call] dinleyici:', err?.code || err?.message || err)
-  );
-
-  return () => {
-    if (tableCallsUnsub) {
-      try { tableCallsUnsub(); } catch { /* */ }
-      tableCallsUnsub = null;
-    }
-  };
 }
 
 export function cleanupFirebase() {

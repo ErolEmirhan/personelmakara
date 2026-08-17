@@ -50,7 +50,7 @@ export function localApiPlugin(mode) {
           return;
         }
 
-        if (req.method !== 'POST') {
+        if (req.method !== 'POST' && req.method !== 'OPTIONS') {
           res.statusCode = 405;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'Method not allowed' }));
@@ -68,7 +68,9 @@ export function localApiPlugin(mode) {
           const handlerFile = API_ROUTES[pathname];
           const handlerPath = path.join(ROOT, '..', 'api', handlerFile);
           const { default: handler } = await import(pathToFileURL(handlerPath).href);
-          req.body = await readJsonBody(req);
+          if (req.method === 'POST') {
+            req.body = await readJsonBody(req);
+          }
           await handler(req, res);
         } catch (err) {
           if (!res.headersSent) {

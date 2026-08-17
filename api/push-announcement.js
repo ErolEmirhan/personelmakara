@@ -1,4 +1,5 @@
 import { getMessagingForBranch } from './_lib/firebaseAdmin.js';
+import { applyPushApiCors, handlePushApiPreflight } from './_lib/pushApiCors.js';
 
 const MAX_TOKENS_PER_BATCH = 500;
 
@@ -12,7 +13,16 @@ function normalizeTokens(raw) {
   return [...new Set(raw.filter((t) => typeof t === 'string' && t.length > 20))];
 }
 
+function isTableCallPush(body) {
+  if (body?.pushType === 'table_call') return true;
+  const id = String(body?.announcementId || '');
+  return id.startsWith('tablecall-');
+}
+
 export default async function handler(req, res) {
+  applyPushApiCors(req, res);
+  if (handlePushApiPreflight(req, res)) return;
+
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed' });
   }
@@ -30,7 +40,7 @@ export default async function handler(req, res) {
   const title = (body?.title || '').trim();
   const message = (body?.message || '').trim();
   const announcementId = body?.announcementId || null;
-  const pushType = body?.pushType || 'staff_announcement';
+  const pushType = body?.pushType || (isTableCallPush(body) ? 'table_call' : 'staff_announcement');
   const ticketId = body?.ticketId || null;
   const callId = body?.callId || null;
   const tableNumber = body?.tableNumber || null;
