@@ -35,13 +35,13 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       injectRegister: null,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wav}'],
       },
       devOptions: {
         enabled: true,
         type: 'module',
       },
-      includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png', 'makara.png'],
+      includeAssets: ['icons/*.png', 'icons/*.svg', 'logo.png', 'makara.png', 'sounds/*.wav'],
       manifest: {
         name: 'MAKARA Mobil Sipariş',
         short_name: 'MAKARA Personel',
@@ -81,7 +81,7 @@ export default defineConfig(({ mode }) => ({
           /registerSW\.js$/,
           /workbox-.*\.js$/,
         ],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wav}'],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\/image-proxy/,

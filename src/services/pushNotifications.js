@@ -10,6 +10,7 @@ import {
 } from './firebaseService';
 import { formatPushNotificationDisplay } from '../utils/pushDisplayFormat';
 import { supportCategoryLabel } from '../constants/supportTickets';
+import { unlockTableCallSound } from '../utils/tableCallSound';
 
 const VAPID_BY_BRANCH = {
   makara: import.meta.env.VITE_FCM_VAPID_KEY_MAKARA,
@@ -174,6 +175,8 @@ export async function registerStaffPushNotifications(branchKey, staffId, { force
   if (permission !== 'granted') {
     return { ok: false, reason: 'denied', permission };
   }
+
+  unlockTableCallSound();
 
   const app = getMainApp();
   if (!app) {

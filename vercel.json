@@ -24,7 +24,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     {
-      "source": "/((?!assets/|icons/|logo\\.png|makara\\.png|sw\\.js|registerSW\\.js|manifest\\.webmanifest|workbox-).*)",
+      "source": "/((?!assets/|icons/|sounds/|logo\\.png|makara\\.png|sw\\.js|registerSW\\.js|manifest\\.webmanifest|workbox-).*)",
       "destination": "/index.html"
     }
   ],
