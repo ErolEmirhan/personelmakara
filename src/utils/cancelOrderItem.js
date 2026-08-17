@@ -1,5 +1,4 @@
 import { submitAndWaitMobileAction } from '../services/firebaseService';
-import { buildStaffActionMeta } from './staffRole';
 
 export async function cancelOrderItems({
   item,
@@ -15,7 +14,10 @@ export async function cancelOrderItems({
     tableId,
     staffId: staff.id,
     staffName: `${staff.name} ${staff.surname}`,
-    ...buildStaffActionMeta(staff),
+    staffIsManager: !!(staff.is_manager || staff.is_chef),
+    staffIsChef: !!staff.is_chef,
+    staffIsAdmin: !!staff.is_admin,
+    staffIsBoss: !!staff.is_boss,
   };
 
   const maxQty = item.quantity || 1;

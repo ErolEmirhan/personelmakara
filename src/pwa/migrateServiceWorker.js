@@ -1,5 +1,5 @@
-import { signalAppUpdating } from './updateSplash';
-import { fetchRemoteBuildVersion, readLocalBuildVersion, isRemoteBuildNewer } from './buildVersion';
+import { hardReloadWithCacheBust } from './serviceWorkerClient';
+import { readLocalBuildVersion } from './buildVersion';
 
 const APP_VERSION_KEY = 'makara-app-version';
 const MIGRATION_RELOAD_KEY = 'makara-cache-migrated';
@@ -20,16 +20,37 @@ function writeStoredVersion(version) {
   }
 }
 
-function readBuildVersionFromDom() {
-  const meta = document.querySelector('meta[name="makara-build"]');
-  return meta?.getAttribute('content') || null;
-}
-
 function resolveAppVersion(fallbackVersion) {
-  return readBuildVersionFromDom() || fallbackVersion || 'unknown';
+  return readLocalBuildVersion() || fallbackVersion || 'unknown';
 }
 
-/** Eski /mobile/ SW veya sürüm değişiminde bozuk PWA önbelleğini temizler */
+async function purgeAllCaches() {
+  if (!('caches' in window)) return;
+  const keys = await caches.keys();
+  await Promise.all(keys.map((key) => caches.delete(key)));
+}
+
+async function unregisterAllServiceWorkers() {
+  if (!('serviceWorker' in navigator)) return;
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((reg) => reg.unregister()));
+}
+
+function stripRecoveryParams(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete('reset-sw');
+    parsed.searchParams.delete('_makara_v');
+    return parsed.toString();
+  } catch {
+    return url.split('?')[0];
+  }
+}
+
+/**
+ * Eski /mobile/ SW, sürüm sıçraması veya reset-sw ile bozuk önbellek — tam sıfırlama.
+ * Normal deploy'lar network-first shell + soft reload ile hallolur (registerUpdates).
+ */
 export async function migrateServiceWorkerCache(fallbackVersion) {
   if (!('serviceWorker' in navigator)) {
     writeStoredVersion(resolveAppVersion(fallbackVersion));
@@ -40,9 +61,6 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
   const forceReset = new URLSearchParams(window.location.search).get('reset-sw') === '1';
   const previousVersion = readStoredVersion();
   const versionChanged = previousVersion && previousVersion !== appVersion;
-  const localDom = readBuildVersionFromDom();
-  const remoteBuild = await fetchRemoteBuildVersion();
-  const remoteBuildNewer = isRemoteBuildNewer(localDom, remoteBuild);
 
   const registrations = await navigator.serviceWorker.getRegistrations();
   const isRootDeploy = !window.location.pathname.startsWith('/mobile');
@@ -51,41 +69,35 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
     return isRootDeploy && scopePath.includes('/mobile');
   });
 
-  const shouldReset = forceReset || versionChanged || hasLegacyScope || remoteBuildNewer;
+  const shouldReset = forceReset || versionChanged || hasLegacyScope;
   if (!shouldReset) {
     writeStoredVersion(appVersion);
     return;
   }
 
-  await Promise.all(registrations.map((reg) => reg.unregister()));
-
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((key) => caches.delete(key)));
+  // Aktif SW varsa önce cache temizliği iste (mümkünse)
+  try {
+    const active = registrations.find((r) => r.active)?.active;
+    if (active) {
+      active.postMessage({ type: 'PURGE_CACHES' });
+    }
+  } catch {
+    /* ignore */
   }
 
+  await unregisterAllServiceWorkers();
+  await purgeAllCaches();
   writeStoredVersion(appVersion);
 
   try {
     if (!sessionStorage.getItem(MIGRATION_RELOAD_KEY)) {
       sessionStorage.setItem(MIGRATION_RELOAD_KEY, '1');
-      if (forceReset) signalAppUpdating();
-      window.location.replace(stripResetParam(window.location.href));
+      hardReloadWithCacheBust();
       return;
     }
     sessionStorage.removeItem(MIGRATION_RELOAD_KEY);
+    window.location.replace(stripRecoveryParams(window.location.href));
   } catch {
-    if (forceReset) signalAppUpdating();
-    window.location.replace(stripResetParam(window.location.href));
-  }
-}
-
-function stripResetParam(url) {
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.delete('reset-sw');
-    return parsed.toString();
-  } catch {
-    return url.split('?')[0];
+    hardReloadWithCacheBust();
   }
 }

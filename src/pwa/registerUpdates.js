@@ -1,7 +1,14 @@
-import { registerSW } from 'virtual:pwa-register';
 import { redirectToCacheReset } from '../utils/chunkLoadRecovery';
 import { isAppBusy } from '../utils/appBusy';
 import { signalAppUpdating } from './updateSplash';
+import {
+  activateWaitingServiceWorker,
+  checkForWaitingUpdate,
+  hardReloadWithCacheBust,
+  installControllerChangeReload,
+  installIosResumeUpdateCheck,
+  registerAppServiceWorker,
+} from './serviceWorkerClient';
 import {
   compareBuildVersions,
   fetchRemoteBuildVersion,
@@ -9,17 +16,11 @@ import {
   readLocalBuildVersion,
 } from './buildVersion';
 
-/** SW güncelleme kontrolü */
 const SW_UPDATE_INTERVAL_MS = 2 * 60 * 1000;
-/** Aynı oturumda art arda yenileme üst sınırı (build zorlaması hariç) */
 const RELOAD_COOLDOWN_MS = 90_000;
-/** Meşgul kullanıcı için yeniden deneme aralığı */
 const BUSY_RETRY_MS = 8_000;
-/** Meşgul iken en fazla bekleme denemesi, sonra yine de yenile */
 const BUSY_MAX_RETRIES = 12;
-/** İlk build kontrolü — boot tamamlandıktan sonra */
 const INITIAL_BUILD_CHECK_MS = 2_000;
-/** Yedek build kontrolü */
 const FOLLOWUP_BUILD_CHECK_MS = 12_000;
 
 const LAST_RELOAD_AT_KEY = 'makara-last-reload-at';
@@ -57,37 +58,71 @@ function showUpdateOverlayOnce() {
   signalAppUpdating();
 }
 
-function scheduleReload(options = {}) {
-  const { force = false, immediate = false, reason = 'sw' } = options;
-  if (!canScheduleReload({ force })) return;
+function markReloadScheduled() {
+  reloadScheduled = true;
+  writeSessionNumber(LAST_RELOAD_AT_KEY, Date.now());
+}
+
+function isUpdatePending() {
+  try {
+    return sessionStorage.getItem('makara-app-updating') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Hafif güncelleme: SW aktive et; reload controllerchange veya fallback ile */
+async function applySoftUpdate(registration) {
   showUpdateOverlayOnce();
+  markReloadScheduled();
+
+  if (registration?.waiting) {
+    await activateWaitingServiceWorker(registration);
+    window.setTimeout(() => {
+      if (isUpdatePending()) hardReloadWithCacheBust();
+    }, 2200);
+    return;
+  }
+
+  hardReloadWithCacheBust();
+}
+
+function scheduleSoftReload(options = {}) {
+  const { force = false, registration = null } = options;
+  if (!canScheduleReload({ force })) return;
 
   const attempt = (busyRetries = 0) => {
     const busy = isAppBusy();
-    const shouldForceDespiteBusy =
-      force && reason === 'build' && busyRetries >= BUSY_MAX_RETRIES;
+    const shouldForceDespiteBusy = force && busyRetries >= BUSY_MAX_RETRIES;
 
     if (busy && !shouldForceDespiteBusy) {
       window.setTimeout(() => attempt(busyRetries + 1), BUSY_RETRY_MS);
       return;
     }
 
-    reloadScheduled = true;
-    writeSessionNumber(LAST_RELOAD_AT_KEY, Date.now());
-    redirectToCacheReset({ immediate });
+    applySoftUpdate(registration);
   };
 
   attempt();
 }
 
+/** Ağır kurtarma: chunk hatası / kullanıcı zorla yenile — tam SW sıfırlama */
+function scheduleHardReset(options = {}) {
+  const { force = false, immediate = false } = options;
+  if (!canScheduleReload({ force })) return;
+  showUpdateOverlayOnce();
+  markReloadScheduled();
+  redirectToCacheReset({ immediate });
+}
+
 async function checkRemoteBuildVersion(options = {}) {
-  const { force = false } = options;
+  const { force = false, registration = null } = options;
   const local = readLocalBuildVersion();
   if (!local) return { updateAvailable: false, local, remote: null };
 
   const remote = await fetchRemoteBuildVersion();
   if (isRemoteBuildNewer(local, remote)) {
-    scheduleReload({ force: true, immediate: force, reason: 'build' });
+    scheduleSoftReload({ force: true, registration });
     return { updateAvailable: true, local, remote };
   }
 
@@ -95,19 +130,24 @@ async function checkRemoteBuildVersion(options = {}) {
 }
 
 function scheduleUpdateChecks(registration) {
-  const checkSwUpdate = () => {
-    registration.update().catch(() => {});
+  const checkSwUpdate = async () => {
+    const updated = await checkForWaitingUpdate(registration);
+    if (!updated) {
+      await registration.update().catch(() => {});
+    }
   };
 
   const checkBuild = (opts) => {
-    checkRemoteBuildVersion(opts).catch(() => {});
+    checkRemoteBuildVersion({ ...opts, registration }).catch(() => {});
   };
 
   checkSwUpdate();
   window.setTimeout(() => checkBuild({ force: false }), INITIAL_BUILD_CHECK_MS);
   window.setTimeout(() => checkBuild({ force: false }), FOLLOWUP_BUILD_CHECK_MS);
 
-  window.setInterval(checkSwUpdate, SW_UPDATE_INTERVAL_MS);
+  window.setInterval(() => {
+    registration.update().catch(() => {});
+  }, SW_UPDATE_INTERVAL_MS);
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
@@ -126,6 +166,11 @@ function scheduleUpdateChecks(registration) {
     checkBuild({ force: false });
   });
 
+  installIosResumeUpdateCheck((reg) => {
+    checkForWaitingUpdate(reg).catch(() => {});
+    checkRemoteBuildVersion({ force: false, registration: reg }).catch(() => {});
+  });
+
   registration.addEventListener('updatefound', () => {
     const worker = registration.installing;
     if (!worker) return;
@@ -133,46 +178,37 @@ function scheduleUpdateChecks(registration) {
     worker.addEventListener('statechange', () => {
       if (worker.state !== 'installed') return;
       if (!navigator.serviceWorker.controller) return;
-      scheduleReload({ force: false, reason: 'sw' });
+      scheduleSoftReload({ force: false, registration });
     });
   });
 }
 
-/** Başarılı açılış */
 export function markPwaUpdateSettled() {
   updateOverlayShown = false;
   reloadScheduled = false;
 }
 
-/** Ayarlar ekranı — güncelleme var mı kontrol et */
 export async function checkForAppUpdate() {
   return compareBuildVersions();
 }
 
-/** Ayarlar ekranı — kullanıcı tetiklemeli güncelleme */
+/** Ayarlar — kullanıcı tetiklemeli tam sıfırlama */
 export function forcePwaRefresh() {
   reloadScheduled = false;
   writeSessionNumber(LAST_RELOAD_AT_KEY, 0);
-  scheduleReload({ force: true, immediate: true, reason: 'build' });
+  scheduleHardReset({ force: true, immediate: true });
 }
 
-export function initPwaUpdates() {
+export async function initPwaUpdates() {
   if (!('serviceWorker' in navigator)) return;
 
+  installControllerChangeReload();
+
   try {
-    registerSW({
-      immediate: true,
-      onRegisteredSW(_swUrl, registration) {
-        if (registration) scheduleUpdateChecks(registration);
-      },
-      onRegisterError(error) {
-        console.warn('Service worker kaydı başarısız:', error);
-      },
-      onOfflineReady() {},
-      onNeedRefresh() {
-        scheduleReload({ force: false, reason: 'sw' });
-      },
-    });
+    const registration = await registerAppServiceWorker();
+    if (registration) {
+      scheduleUpdateChecks(registration);
+    }
   } catch (error) {
     console.warn('Service worker başlatılamadı:', error);
   }

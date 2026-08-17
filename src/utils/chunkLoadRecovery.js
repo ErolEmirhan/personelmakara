@@ -37,9 +37,8 @@ export function redirectToCacheReset(options = {}) {
   recoveryScheduled = true;
   signalAppUpdating();
   const url = new URL(window.location.href);
-  if (!url.searchParams.has('reset-sw')) {
-    url.searchParams.set('reset-sw', '1');
-  }
+  url.searchParams.set('reset-sw', '1');
+  url.searchParams.set('_makara_v', String(Date.now()));
   const delay = immediate ? 400 : RESET_DELAY_MS;
   window.setTimeout(() => {
     window.location.replace(url.toString());

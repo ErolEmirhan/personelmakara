@@ -3,7 +3,7 @@ import { submitAndWaitMobileAction } from '../../services/firebaseService';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { TablePickerGrid } from '../tables/TablePickerGrid';
-import { buildStaffActionMeta } from '../../utils/staffRole';
+import { TableOpsModalShell, TableSummaryCard } from './TableOpsModalShell';
 
 export function TransferTableModal({ open, onClose }) {
   const { tables, selectedTable, loadData, showToast } = useApp();
@@ -55,7 +55,10 @@ export function TransferTableModal({ open, onClose }) {
         targetTableId: String(targetId),
         staffId: staff.id,
         staffName: `${staff.name} ${staff.surname}`,
-        ...buildStaffActionMeta(staff),
+        staffIsManager: !!(staff.is_manager || staff.is_chef),
+        staffIsChef: !!staff.is_chef,
+        staffIsAdmin: !!staff.is_admin,
+        staffIsBoss: !!staff.is_boss,
       });
       if (res.success) {
         showToast('success', 'Başarılı', 'Masa aktarıldı');

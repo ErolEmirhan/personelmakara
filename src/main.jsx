@@ -6,11 +6,13 @@ import { AppErrorBoundary } from './components/ui/AppErrorBoundary';
 import { lockViewportZoom } from './utils/disableZoom';
 import { migrateServiceWorkerCache } from './pwa/migrateServiceWorker';
 import { initPwaUpdates, markPwaUpdateSettled } from './pwa/registerUpdates';
+import { consumeAppUpdatingFlag } from './pwa/updateSplash';
 import { installChunkLoadRecovery, isRecoverableDeployError, redirectToCacheReset } from './utils/chunkLoadRecovery';
 
 installChunkLoadRecovery();
 
 async function boot() {
+  consumeAppUpdatingFlag();
   await migrateServiceWorkerCache(__APP_VERSION__);
 
   lockViewportZoom();

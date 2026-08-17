@@ -35,7 +35,8 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       injectRegister: null,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wav}'],
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff2,wav}'],
+        globIgnores: ['**/index.html'],
       },
       devOptions: {
         enabled: true,
@@ -71,7 +72,7 @@ export default defineConfig(({ mode }) => ({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        navigateFallback: `${base}index.html`,
+        navigateFallback: null,
         navigateFallbackDenylist: [
           /^\/api\//,
           /^\/assets\//,
@@ -81,7 +82,8 @@ export default defineConfig(({ mode }) => ({
           /registerSW\.js$/,
           /workbox-.*\.js$/,
         ],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wav}'],
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff2,wav}'],
+        globIgnores: ['**/index.html'],
         runtimeCaching: [
           {
             urlPattern: /^https?:\/\/.*\/api\/image-proxy/,

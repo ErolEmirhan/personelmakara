@@ -24,23 +24,6 @@ export function hasManagerLevelAccess(staff) {
   return !!(staff.is_admin || staff.is_boss || staff.is_manager || staff.is_chef);
 }
 
-/** Masaüstü kuyruğuna giden işlemlerde şef = müdür yetkisi olarak iletilir */
-export function buildStaffActionMeta(staff) {
-  if (!staff) return {};
-  const managerOps = hasManagerLevelAccess(staff);
-  return {
-    staffIsManager: !!(staff.is_manager || staff.is_chef),
-    staffIsChef: !!staff.is_chef,
-    staffIsAdmin: !!staff.is_admin,
-    staffIsBoss: !!staff.is_boss,
-    is_manager: !!staff.is_manager,
-    is_chef: !!staff.is_chef,
-    is_admin: !!staff.is_admin,
-    is_boss: !!staff.is_boss,
-    hasManagerOps: managerOps,
-  };
-}
-
 export function staffRoleLabel(staff) {
   if (!staff) return 'Personel';
   if (isStaffAdmin(staff)) return 'Admin';

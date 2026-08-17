@@ -1,9 +1,13 @@
 /* eslint-disable no-undef */
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { registerRoute, NavigationRoute } from 'workbox-routing';
+import { NetworkFirst } from 'workbox-strategies';
 import { initializeApp } from 'firebase/app';
 import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw';
 import { BRANCH_FIREBASE } from './config/firebase';
+
+const APP_SHELL_CACHE = 'makara-app-shell-v1';
 
 self.skipWaiting();
 clientsClaim();
@@ -31,10 +35,41 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  if (event.data?.type === 'PURGE_CACHES') {
+    event.waitUntil(
+      caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+    );
+  }
 });
 
-precacheAndRoute(self.__WB_MANIFEST);
+/** index.html precache edilmez — deploy sonrası eski shell tuzağını önler */
+function buildPrecacheManifest(manifest) {
+  return manifest.filter((entry) => {
+    const url = typeof entry === 'string' ? entry : entry.url;
+    const path = url.split('?')[0];
+    return !path.endsWith('index.html') && path !== '/' && !path.endsWith('/');
+  });
+}
+
+precacheAndRoute(buildPrecacheManifest(self.__WB_MANIFEST));
 cleanupOutdatedCaches();
+
+/** HTML / navigasyon: önce ağ (taze index + hash'li asset listesi), offline'da shell cache */
+registerRoute(
+  new NavigationRoute(
+    new NetworkFirst({
+      cacheName: APP_SHELL_CACHE,
+      networkTimeoutSeconds: 5,
+      plugins: [
+        {
+          cacheWillUpdate: async ({ response }) => (
+            response && response.status === 200 ? response : null
+          ),
+        },
+      ],
+    })
+  )
+);
 
 const app = initializeApp(BRANCH_FIREBASE.makara.main);
 const messaging = getMessaging(app);

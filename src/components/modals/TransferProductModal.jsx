@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getTableOrderItems, submitAndWaitMobileAction } from '../../services/firebaseService';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { buildStaffActionMeta } from '../../utils/staffRole';
+import { TablePickerGrid } from '../tables/TablePickerGrid';
 import { TableOpsModalShell, TableSummaryCard, StepIndicator } from './TableOpsModalShell';
 
 function formatMoney(value) {
@@ -178,7 +178,10 @@ export function TransferProductModal({ open, onClose }) {
         })),
         staffId: staff.id,
         staffName: `${staff.name} ${staff.surname}`,
-        ...buildStaffActionMeta(staff),
+        staffIsManager: !!(staff.is_manager || staff.is_chef),
+        staffIsChef: !!staff.is_chef,
+        staffIsAdmin: !!staff.is_admin,
+        staffIsBoss: !!staff.is_boss,
       });
 
       if (res.success) {
