@@ -1,5 +1,5 @@
 import { hardReloadWithCacheBust } from './serviceWorkerClient';
-import { readLocalBuildVersion } from './buildVersion';
+import { fetchRemoteBuildVersion, readLocalBuildVersion as readMetaBuildVersion } from './buildVersion';
 
 const APP_VERSION_KEY = 'makara-app-version';
 const MIGRATION_RELOAD_KEY = 'makara-cache-migrated';
@@ -21,7 +21,7 @@ function writeStoredVersion(version) {
 }
 
 function resolveAppVersion(fallbackVersion) {
-  return readLocalBuildVersion() || fallbackVersion || 'unknown';
+  return readMetaBuildVersion() || fallbackVersion || 'unknown';
 }
 
 async function purgeAllCaches() {
@@ -57,10 +57,28 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
     return;
   }
 
-  const appVersion = resolveAppVersion(fallbackVersion);
   const forceReset = new URLSearchParams(window.location.search).get('reset-sw') === '1';
+  if (forceReset) {
+    await unregisterAllServiceWorkers();
+    await purgeAllCaches();
+    writeStoredVersion(resolveAppVersion(fallbackVersion));
+    return;
+  }
+
+  const appVersion = resolveAppVersion(fallbackVersion);
   const previousVersion = readStoredVersion();
   const versionChanged = previousVersion && previousVersion !== appVersion;
+
+  let remoteVersion = null;
+  try {
+    remoteVersion = await fetchRemoteBuildVersion();
+  } catch {
+    /* offline */
+  }
+
+  const localMetaVersion = readMetaBuildVersion();
+  const remoteMismatch = remoteVersion && localMetaVersion && remoteVersion !== localMetaVersion;
+  const storedMismatch = remoteVersion && previousVersion && remoteVersion !== previousVersion;
 
   const registrations = await navigator.serviceWorker.getRegistrations();
   const isRootDeploy = !window.location.pathname.startsWith('/mobile');
@@ -69,13 +87,12 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
     return isRootDeploy && scopePath.includes('/mobile');
   });
 
-  const shouldReset = forceReset || versionChanged || hasLegacyScope;
+  const shouldReset = versionChanged || remoteMismatch || storedMismatch || hasLegacyScope;
   if (!shouldReset) {
-    writeStoredVersion(appVersion);
+    writeStoredVersion(remoteVersion || appVersion);
     return;
   }
 
-  // Aktif SW varsa önce cache temizliği iste (mümkünse)
   try {
     const active = registrations.find((r) => r.active)?.active;
     if (active) {
@@ -87,7 +104,7 @@ export async function migrateServiceWorkerCache(fallbackVersion) {
 
   await unregisterAllServiceWorkers();
   await purgeAllCaches();
-  writeStoredVersion(appVersion);
+  writeStoredVersion(remoteVersion || appVersion);
 
   try {
     if (!sessionStorage.getItem(MIGRATION_RELOAD_KEY)) {

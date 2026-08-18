@@ -2,12 +2,12 @@
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { NetworkFirst } from 'workbox-strategies';
+import { NetworkOnly, NetworkFirst } from 'workbox-strategies';
 import { initializeApp } from 'firebase/app';
 import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw';
 import { BRANCH_FIREBASE } from './config/firebase';
 
-const APP_SHELL_CACHE = 'makara-app-shell-v1';
+const CACHE_GENERATION = 'makara-v3';
 
 self.skipWaiting();
 clientsClaim();
@@ -19,6 +19,16 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      // Eski JS/CSS önbelleklerini temizle (iOS stale bundle tuzağı)
+      if ('caches' in self) {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys
+            .filter((key) => !key.includes(CACHE_GENERATION))
+            .map((key) => caches.delete(key))
+        );
+      }
+
       await self.clients.claim();
       const clients = await self.clients.matchAll({
         type: 'window',
@@ -42,33 +52,42 @@ self.addEventListener('message', (event) => {
   }
 });
 
-/** index.html precache edilmez — deploy sonrası eski shell tuzağını önler */
+/** Yalnızca ikon/ses — JS/CSS asla precache edilmez */
 function buildPrecacheManifest(manifest) {
   return manifest.filter((entry) => {
     const url = typeof entry === 'string' ? entry : entry.url;
-    const path = url.split('?')[0];
-    return !path.endsWith('index.html') && path !== '/' && !path.endsWith('/');
+    const path = url.split('?')[0].toLowerCase();
+    if (/\.(js|css|mjs|html)$/.test(path)) return false;
+    if (path.includes('/assets/')) return false;
+    if (path.endsWith('index.html') || path === '/' || path.endsWith('/')) return false;
+    return true;
   });
 }
 
 precacheAndRoute(buildPrecacheManifest(self.__WB_MANIFEST));
 cleanupOutdatedCaches();
 
-/** HTML / navigasyon: önce ağ (taze index + hash'li asset listesi), offline'da shell cache */
+/** HTML: her zaman ağ — eski shell iOS'ta takılmasın */
+registerRoute(new NavigationRoute(new NetworkOnly()));
+
+/** JS/CSS: ağ öncelikli, kısa timeout — stale bundle servis etme */
 registerRoute(
-  new NavigationRoute(
-    new NetworkFirst({
-      cacheName: APP_SHELL_CACHE,
-      networkTimeoutSeconds: 5,
-      plugins: [
-        {
-          cacheWillUpdate: async ({ response }) => (
-            response && response.status === 200 ? response : null
-          ),
-        },
-      ],
-    })
-  )
+  ({ request, url }) => (
+    request.destination === 'script'
+    || request.destination === 'style'
+    || /\.(js|css|mjs)$/.test(url.pathname)
+  ),
+  new NetworkFirst({
+    cacheName: `${CACHE_GENERATION}-assets`,
+    networkTimeoutSeconds: 8,
+    plugins: [
+      {
+        cacheWillUpdate: async ({ response }) => (
+          response && response.status === 200 ? response : null
+        ),
+      },
+    ],
+  })
 );
 
 const app = initializeApp(BRANCH_FIREBASE.makara.main);
@@ -173,7 +192,6 @@ function openFromNotification(data) {
 onBackgroundMessage(messaging, (payload) => {
   const { customTitle, message, data } = parsePushPayload(payload);
 
-  // FCM notification payload varsa tarayıcı sesli bildirimi kendisi gösterir
   if (payload.notification) {
     return;
   }

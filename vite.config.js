@@ -3,12 +3,13 @@ import react from '@vitejs/plugin-react';
 import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
 import { localApiPlugin } from './scripts/vite-local-api.js';
+import { deferredBootPlugin } from './scripts/vite-deferred-boot.js';
 
 // Vercel'de kök dizinden sunulur; kasa PC entegrasyonunda /mobile/ alt yolu kullanılır.
 const base = process.env.VERCEL ? '/' : '/mobile/';
 const appVersion =
   process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ||
-  `v1-compat-${base === '/' ? 'root' : 'mobile'}`;
+  `local-${Date.now().toString(36)}`;
 
 export default defineConfig(({ mode }) => ({
   define: {
@@ -16,6 +17,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     localApiPlugin(mode),
+    deferredBootPlugin(),
     {
       name: 'makara-build-version',
       transformIndexHtml(html) {
@@ -35,8 +37,8 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       injectRegister: null,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,ico,png,svg,woff2,wav}'],
-        globIgnores: ['**/index.html'],
+        globPatterns: ['**/*.{ico,png,svg,wav,woff2}'],
+        globIgnores: ['**/*.{js,css,mjs,html}', '**/assets/**'],
       },
       devOptions: {
         enabled: true,
