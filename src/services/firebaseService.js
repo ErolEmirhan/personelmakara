@@ -322,10 +322,29 @@ export async function updateStaffProfileImage(staffId, imageDataUrl) {
   return { success: true };
 }
 
+/** Havzan: loginStaff aynı şifreyi iki kayıtta ya da silinmiş hesapta görünce girişi kilitler */
+async function assertHavzanPasswordAvailable(staffId, password) {
+  if (currentBranchKey !== 'makara') return;
+  const pwd = String(password);
+  const deletionMap = await fetchStaffDeletionMap();
+  if (deletionMap.byPassword.has(pwd)) {
+    throw new Error('Bu şifre silinmiş bir personele ait. Farklı bir şifre seçin.');
+  }
+  const snap = await getDocs(query(collection(requireMainDb(), 'staff'), where('password', '==', pwd)));
+  if (snap.docs.some((d) => String(d.id) !== String(staffId))) {
+    throw new Error('Bu şifre başka bir personel tarafından kullanılıyor. Farklı bir şifre seçin.');
+  }
+}
+
 export async function changeStaffPassword(staffId, currentPassword, newPassword) {
   const login = await loginStaff(currentPassword);
   if (!login.success || login.staff.id !== staffId) {
     return { success: false, error: 'Mevcut şifre hatalı' };
+  }
+  try {
+    await assertHavzanPasswordAvailable(staffId, newPassword);
+  } catch (err) {
+    return { success: false, error: err.message };
   }
   const ref = doc(requireMainDb(), 'staff', String(staffId));
   await updateDoc(ref, { password: newPassword.toString(), updatedAt: new Date().toISOString() });
@@ -402,6 +421,7 @@ export async function updateStaffMemberProfile(staffId, { name, surname, passwor
 
   const nextPassword = (password ?? '').toString().trim();
   if (nextPassword) {
+    await assertHavzanPasswordAvailable(id, nextPassword);
     patch.password = nextPassword;
   }
 
