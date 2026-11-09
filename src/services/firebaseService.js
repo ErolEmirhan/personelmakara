@@ -1329,11 +1329,21 @@ function resolveMobileActionWait(data) {
   if (data.status === 'failed') {
     return {
       success: false,
-      error: data.error || 'İşlem başarısız',
+      error: friendlyMobileActionError(data.error),
       requiresReason: !!data.requiresReason,
     };
   }
   return null;
+}
+
+/** Kasa yeni bir işlemi henüz tanımıyorsa (güncellenmemiş) anlaşılır mesaj */
+function friendlyMobileActionError(error) {
+  const msg = String(error || '').trim();
+  if (!msg) return 'İşlem başarısız';
+  if (/^Bilinmeyen işlem türü/i.test(msg)) {
+    return 'Kasa uygulaması bu özellik için henüz güncellenmedi. Kasayı kapatıp açın (yeni sürümü kurar), sonra tekrar deneyin.';
+  }
+  return msg;
 }
 
 export function waitForMobileAction(actionDocId, timeoutMs = 45000) {
