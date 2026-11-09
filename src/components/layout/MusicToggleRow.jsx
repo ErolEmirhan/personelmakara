@@ -39,10 +39,20 @@ export function MusicToggleRow({ open }) {
   const [, setTick] = useState(0);
   const reqRef = useRef(0);
   const endRefreshRef = useRef(false);
+  // Spotify araması
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null); // null: aranmadı
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [rowBusy, setRowBusy] = useState(null); // `${uri}|play` | `${uri}|queue`
+  const searchSeq = useRef(0);
+  const inputRef = useRef(null);
 
-  const send = useCallback((mode) => submitAndWaitMobileAction({
+  const send = useCallback((mode, extra = {}) => submitAndWaitMobileAction({
     type: 'music_control',
     mode,
+    ...extra,
     staffId: staff.id,
     staffName: `${staff.name} ${staff.surname}`,
     staffIsManager: !!staff.is_manager,
@@ -155,6 +165,62 @@ export function MusicToggleRow({ open }) {
     }
   };
 
+  const runSearch = async (e) => {
+    e?.preventDefault?.();
+    const q = query.trim();
+    if (!q || searching) return;
+    const id = ++searchSeq.current;
+    setSearching(true);
+    setSearchError('');
+    inputRef.current?.blur();
+    try {
+      const res = await send('search', { query: q });
+      if (id !== searchSeq.current) return;
+      if (res.success) setResults(res.result?.results || []);
+      else { setResults(null); setSearchError(res.error || 'Arama yapılamadı'); }
+    } catch (err) {
+      if (id === searchSeq.current) setSearchError(err.message || 'Bağlantı hatası');
+    } finally {
+      if (id === searchSeq.current) setSearching(false);
+    }
+  };
+
+  const playTrack = async (t) => {
+    if (rowBusy) return;
+    setRowBusy(`${t.uri}|play`);
+    // Anında göster
+    setInfo((prev) => ({ ...(prev || {}), playing: true, title: t.title, artist: t.artist, thumb: t.image, positionSec: 0, durationSec: t.durationSec, receivedAt: Date.now(), noSession: false }));
+    try {
+      const res = await send('play_track', { uri: t.uri });
+      if (res.success) {
+        apply(res);
+        if (!res.result?.thumb) setInfo((prev) => (prev ? { ...prev, thumb: prev.thumb || t.image } : prev));
+        showToast('success', 'Çalıyor', `${t.title} · ${t.artist}`);
+      } else {
+        showToast('error', 'Çalınamadı', res.error || 'Şarkı çalınamadı');
+        refresh();
+      }
+    } catch (err) {
+      showToast('error', 'Çalınamadı', err.message || 'Bağlantı hatası');
+    } finally {
+      setRowBusy(null);
+    }
+  };
+
+  const queueTrack = async (t) => {
+    if (rowBusy) return;
+    setRowBusy(`${t.uri}|queue`);
+    try {
+      const res = await send('queue_track', { uri: t.uri });
+      if (res.success) showToast('success', 'Sıraya eklendi', `${t.title} · ${t.artist}`);
+      else showToast('error', 'Eklenemedi', res.error || 'Sıraya eklenemedi');
+    } catch (err) {
+      showToast('error', 'Eklenemedi', err.message || 'Bağlantı hatası');
+    } finally {
+      setRowBusy(null);
+    }
+  };
+
   const title = info?.noSession ? 'Spotify açık değil' : info?.title || (loading ? 'Kasaya bağlanıyor…' : 'Kasadaki müzik');
   const artist = info?.noSession ? 'Kasada Spotify\'ı açın' : info?.artist || (loading && !info ? '' : playing ? '' : 'Müzik kapalı');
 
@@ -168,9 +234,19 @@ export function MusicToggleRow({ open }) {
           <span className={`h-1.5 w-1.5 rounded-full ${playing ? 'bg-[#1ed760] animate-pulse' : 'bg-white/30'}`} />
           {playing ? 'Kasada çalıyor' : 'Kasa müziği'}
         </span>
+        <span className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => { setSearchOpen((v) => !v); setTimeout(() => inputRef.current?.focus(), 60); }}
+          aria-label="Şarkı ara"
+          className={`flex h-8 w-8 items-center justify-center rounded-full transition active:scale-90 ${searchOpen ? 'bg-white text-black' : 'bg-white/10 text-white'}`}
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.4}><circle cx="11" cy="11" r="6.5" /><path strokeLinecap="round" d="M20 20l-4.2-4.2" /></svg>
+        </button>
         <span className="flex items-center gap-1 text-[11px] font-bold text-[#1ed760]">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm4.59 14.42a.62.62 0 01-.86.21c-2.35-1.44-5.31-1.76-8.8-.96a.62.62 0 11-.28-1.22c3.81-.87 7.09-.5 9.73 1.12a.62.62 0 01.21.85zm1.22-2.72a.78.78 0 01-1.07.26c-2.69-1.65-6.79-2.13-9.97-1.17a.78.78 0 11-.45-1.5c3.63-1.1 8.15-.57 11.23 1.33a.78.78 0 01.26 1.08zm.1-2.83C14.68 8.95 9.37 8.78 6.3 9.71a.94.94 0 11-.54-1.8c3.53-1.07 9.39-.86 13.1 1.34a.94.94 0 01-.95 1.62z" /></svg>
           Spotify
+        </span>
         </span>
       </div>
 
@@ -221,6 +297,75 @@ export function MusicToggleRow({ open }) {
           {Icon.next}
         </button>
       </div>
+
+      {searchOpen && (
+        <div className="mt-4 border-t border-white/10 pt-4">
+          <form onSubmit={runSearch} className="flex w-full min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white px-3.5 py-2.5 text-black">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-black/60" fill="none" stroke="currentColor" strokeWidth={2.4}><circle cx="11" cy="11" r="6.5" /><path strokeLinecap="round" d="M20 20l-4.2-4.2" /></svg>
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                enterKeyHint="search"
+                placeholder="Şarkı veya sanatçı ara"
+                className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none placeholder:font-medium placeholder:text-black/40"
+              />
+              {query && (
+                <button type="button" onClick={() => { setQuery(''); setResults(null); inputRef.current?.focus(); }} aria-label="Temizle" className="text-black/40">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm3.54 12.12l-1.42 1.42L12 13.41l-2.12 2.13-1.42-1.42L10.59 12 8.46 9.88l1.42-1.42L12 10.59l2.12-2.13 1.42 1.42L13.41 12z" /></svg>
+                </button>
+              )}
+            </div>
+            <button type="submit" disabled={!query.trim() || searching} className="shrink-0 rounded-full bg-[#1ed760] px-4 py-2.5 text-sm font-bold text-black disabled:opacity-40">
+              Ara
+            </button>
+          </form>
+
+          <div className="mt-3 max-h-[19rem] space-y-1 overflow-y-auto pr-0.5">
+            {searching && Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl p-2">
+                <div className="h-11 w-11 shrink-0 animate-pulse rounded-md bg-white/10" />
+                <div className="flex-1 space-y-1.5"><div className="h-3 w-2/3 animate-pulse rounded bg-white/10" /><div className="h-2.5 w-1/3 animate-pulse rounded bg-white/10" /></div>
+              </div>
+            ))}
+            {!searching && searchError && <p className="px-1 py-3 text-sm text-[#ff8f8f]">{searchError}</p>}
+            {!searching && results && results.length === 0 && <p className="px-1 py-3 text-sm text-white/50">Sonuç bulunamadı</p>}
+            {!searching && results && results.map((t) => {
+              const busyPlay = rowBusy === `${t.uri}|play`;
+              const busyQueue = rowBusy === `${t.uri}|queue`;
+              const isCurrent = info?.title === t.title && info?.artist && t.artist.includes(info.artist.split(',')[0]);
+              return (
+                <div key={t.uri} className={`flex items-center gap-3 rounded-xl p-2 transition ${isCurrent ? 'bg-white/10' : 'active:bg-white/5'}`}>
+                  <button type="button" onClick={() => playTrack(t)} disabled={!!rowBusy} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                    <div className="h-11 w-11 shrink-0 overflow-hidden rounded-md bg-white/10">
+                      {t.image && <img src={t.image} alt="" className="h-full w-full object-cover" loading="lazy" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-[14px] font-semibold ${isCurrent ? 'text-[#1ed760]' : 'text-white'}`}>{t.title}</p>
+                      <p className="truncate text-[12px] text-white/55">
+                        {t.explicit && <span className="mr-1 rounded-sm bg-white/40 px-1 text-[9px] font-bold text-black">E</span>}
+                        {t.artist}
+                      </p>
+                    </div>
+                  </button>
+                  <button type="button" onClick={() => queueTrack(t)} disabled={!!rowBusy} aria-label="Sıraya ekle" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/70 transition active:scale-90 active:bg-white/10 disabled:opacity-40">
+                    {busyQueue ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" /> : (
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M4 7h11M4 12h11M4 17h7M18 14v6M15 17h6" /></svg>
+                    )}
+                  </button>
+                  <button type="button" onClick={() => playTrack(t)} disabled={!!rowBusy} aria-label="Çal" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1ed760] text-black transition active:scale-90 disabled:opacity-50">
+                    {busyPlay ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/20 border-t-black" /> : <svg viewBox="0 0 24 24" className="h-4 w-4 translate-x-[1px]" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 001.5.86l11.04-6.86a1 1 0 000-1.72L9.5 4.28A1 1 0 008 5.14z" /></svg>}
+                  </button>
+                </div>
+              );
+            })}
+            {!searching && !results && !searchError && (
+              <p className="px-1 py-2 text-xs text-white/40">Şarkıya dokun: hemen kasada çalar · ≡+ ile sıraya ekle</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
