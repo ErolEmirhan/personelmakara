@@ -8,6 +8,7 @@ import { TransferTableModal } from '../modals/TransferTableModal';
 import { TransferProductModal } from '../modals/TransferProductModal';
 import { MergeTableModal } from '../modals/MergeTableModal';
 import { AdisyonRequestModal } from '../modals/AdisyonRequestModal';
+import { MusicToggleRow } from './MusicToggleRow';
 import { SalesRecordPanel } from '../sales/SalesRecordPanel';
 import { useBackHandler } from '../../hooks/useBackButton';
 import { canViewBreakfastSalesRecord } from '../../utils/staffRole';
@@ -154,6 +155,8 @@ export function QuickActionsBottomSheet({ open, onClose }) {
               onClick={openSalesRecord}
             />
           )}
+
+          {canRequestAdisyon && <MusicToggleRow open={open} />}
 
           {canRequestAdisyon && (
             <ActionRow
