@@ -142,6 +142,8 @@ export function QuickActionsBottomSheet({ open, onClose }) {
         subtitle="Masa operasyonları ve veri yenileme"
       >
         <div className="px-5 py-5 pb-8 space-y-3">
+          {canRequestAdisyon && <MusicToggleRow open={open} />}
+
           {canSalesRecord && (
             <ActionRow
               title="Satış kaydı"
@@ -155,8 +157,6 @@ export function QuickActionsBottomSheet({ open, onClose }) {
               onClick={openSalesRecord}
             />
           )}
-
-          {canRequestAdisyon && <MusicToggleRow open={open} />}
 
           {canRequestAdisyon && (
             <ActionRow
