@@ -748,10 +748,8 @@ export function subscribeCatalog(onUpdate) {
       emit();
     },
     (err) => {
+      // Kota dolu / bağlantı yok: boş liste gönderme, mevcut katalog ve önbellek korunur
       console.error('categories snapshot error:', err);
-      categories = [];
-      hasCategories = true;
-      emit();
     }
   );
 
@@ -763,10 +761,8 @@ export function subscribeCatalog(onUpdate) {
       emit();
     },
     (err) => {
+      // Kota dolu / bağlantı yok: boş liste gönderme, mevcut katalog ve önbellek korunur
       console.error('products snapshot error:', err);
-      products = [];
-      hasProducts = true;
-      emit();
     }
   );
 

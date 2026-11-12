@@ -131,6 +131,11 @@ export function AppProvider({ children }) {
 
   const applyCatalogFromFirestore = useCallback(async (catalog) => {
     if (!branchKey || !catalog) return;
+    // Boş katalog (okuma hatası) eldeki menüyü silmesin
+    if (!catalog.categories?.length || !catalog.products?.length) {
+      setLoading(false);
+      return;
+    }
     try {
       const withImages = await resolveProductImages(branchKey, catalog.products || []);
       const safe = sanitizeCatalog(catalog.categories || [], withImages);
