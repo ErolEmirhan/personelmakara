@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useBranch } from '../../context/BranchContext';
 import { useApp } from '../../context/AppContext';
 import { BOTTOM_NAV_PADDING } from '../../constants/nav';
 import { MAKARA_HAVZAN_ZONES } from '../../config/firebase';
 import { TableSectionSkeleton } from '../ui/Skeleton';
+import { useAuth } from '../../context/AuthContext';
+import { TableCloseSheet } from '../modals/TableCloseSheet';
 
 const ZONE_FRAME = {
   pink: {
@@ -32,16 +34,19 @@ const ZONE_FRAME = {
   },
 };
 
-function TableButton({ table, onSelect, isSultan }) {
+function TableButton({ table, onSelect, isSultan, onOpenActions }) {
   const hasOrder = table.hasOrder;
   const orderTotal = typeof table.orderTotal === 'number' ? table.orderTotal : 0;
   const isOutside = table.type === 'outside' || String(table.id).startsWith('outside-');
   const isGarden = table.type === 'garden' || table.zoneKey === 'bahce';
 
+  const showActions = hasOrder && !!onOpenActions;
+
   return (
+    <div className="relative">
     <button
       onClick={() => onSelect(table)}
-      className={`aspect-square rounded-2xl border-2 font-bold transition-all duration-ui ease-premium active:scale-[0.96] flex flex-col items-center justify-center p-1 relative ${
+      className={`w-full aspect-square rounded-2xl border-2 font-bold transition-all duration-ui ease-premium active:scale-[0.96] flex flex-col items-center justify-center p-1 relative ${
         hasOrder
           ? 'border-emerald-500/80 bg-gradient-to-br from-emerald-800 to-emerald-950 text-emerald-50 shadow-lg shadow-emerald-900/30 animate-table-glow'
           : isSultan
@@ -53,7 +58,7 @@ function TableButton({ table, onSelect, isSultan }) {
           : 'border-pink-200/80 bg-gradient-to-br from-pink-50/90 to-fuchsia-50/80 text-pink-900 shadow-card'
       }`}
     >
-      {hasOrder && (
+      {hasOrder && !showActions && (
         <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-400" />
       )}
       <span className="text-lg font-black">{table.number}</span>
@@ -72,6 +77,21 @@ function TableButton({ table, onSelect, isSultan }) {
         <span className="text-[10px] opacity-60 mt-1">Boş</span>
       )}
     </button>
+    {showActions && (
+      <button
+        type="button"
+        onClick={() => onOpenActions(table)}
+        className="absolute top-0.5 right-0.5 w-8 h-8 rounded-xl flex items-center justify-center text-emerald-100 hover:bg-white/10 active:bg-white/20 active:scale-90 transition-all"
+        aria-label={`${table.name || `Masa ${table.number}`} işlemleri`}
+      >
+        <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <circle cx="12" cy="5" r="1.9" />
+          <circle cx="12" cy="12" r="1.9" />
+          <circle cx="12" cy="19" r="1.9" />
+        </svg>
+      </button>
+    )}
+    </div>
   );
 }
 
@@ -152,6 +172,10 @@ function isPackageTable(table) {
 
 export function TableScreen() {
   const { theme, branchKey } = useBranch();
+  const { staff } = useAuth();
+  // Müdür (ve üstü): dolu masaların sağ üstünde üç nokta → "Masayı sonlandır"
+  const canCloseTables = !!(staff && (staff.is_manager || staff.is_admin || staff.is_boss));
+  const [actionsTable, setActionsTable] = useState(null);
   const {
     tables, loading, selectTable,
     currentSultanSection, setCurrentSultanSection,
@@ -210,7 +234,13 @@ export function TableScreen() {
   const renderGrid = (list) => (
     <div className="grid grid-cols-4 gap-2">
       {list.map((table) => (
-        <TableButton key={table.id} table={table} onSelect={selectTable} isSultan={isSultan} />
+        <TableButton
+          key={table.id}
+          table={table}
+          onSelect={selectTable}
+          isSultan={isSultan}
+          onOpenActions={canCloseTables ? setActionsTable : undefined}
+        />
       ))}
     </div>
   );
@@ -296,6 +326,8 @@ export function TableScreen() {
           <p className="text-slate-500 font-medium">Masa bulunamadı</p>
         </div>
       )}
+
+      <TableCloseSheet table={actionsTable} onClose={() => setActionsTable(null)} />
     </div>
   );
 }
