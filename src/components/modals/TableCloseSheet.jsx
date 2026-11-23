@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { submitAndWaitMobileAction } from '../../services/firebaseService';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -65,7 +66,8 @@ export function TableCloseSheet({ table, onClose }) {
     }
   };
 
-  return (
+  // Sayfa kökünde açılır: kaydırılan / animasyonlu kapsayıcının içinde kalıp ekran dışına düşmesin
+  return createPortal(
     <div
       className="fixed inset-0 z-[9000] flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm animate-fade-in"
       onClick={close}
@@ -162,6 +164,7 @@ export function TableCloseSheet({ table, onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
